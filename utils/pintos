@@ -157,8 +157,11 @@ if __name__ == '__main__':
                         help='memory capacity')
     parser.add_argument('--fs-disk', default='fs.dsk',
                         help='Set FS disk file or size')
+<<<<<<< Updated upstream
     parser.add_argument('--swap-disk', default='swap.dsk',
                         help='Set SWAP disk file or size')
+=======
+>>>>>>> Stashed changes
     parser.add_argument('-p', '--put-file', dest='HOSTFNS', nargs=1,
                         action='append', default=[],
                         help='Copy HOSTFN into VM, splited by ":".'
@@ -181,7 +184,12 @@ if __name__ == '__main__':
         kern_args = []
 
     args = parser.parse_args(util_args)
+<<<<<<< Updated upstream
     Pintos(ttest=args.threads_tests, mem=args.memory, no_vga=args.no_vga,
            args=kern_args, timeout=args.timeout, fs=args.fs_disk, gdb=args.gdb,
            swap=args.swap_disk,
+=======
+    Pintos(no_vga=args.no_vga, args=kern_args, timeout=args.timeout,
+           fs=args.fs_disk, gdb=args.gdb,
+>>>>>>> Stashed changes
            hostfns=[f[0].split(':') for f in args.HOSTFNS]).run()
