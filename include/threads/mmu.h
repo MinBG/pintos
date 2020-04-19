@@ -5,11 +5,7 @@
 #include <stdint.h>
 #include "threads/pte.h"
 
-<<<<<<< Updated upstream
 typedef bool pte_for_each_func (uint64_t *pte, void *va, void *aux);
-=======
-typedef void pte_for_each_func (uint64_t *pte, void *va, void *aux);
->>>>>>> Stashed changes
 
 uint64_t *pml4e_walk (uint64_t *pml4, const uint64_t va, int create);
 uint64_t *pml4_create (void);

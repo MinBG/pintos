@@ -23,11 +23,7 @@ typedef int off_t;
 /* Projects 2 and later. */
 void halt (void) NO_RETURN;
 void exit (int status) NO_RETURN;
-<<<<<<< Updated upstream
 pid_t fork (const char *thread_name);
-=======
-pid_t fork (const char *);
->>>>>>> Stashed changes
 int exec (const char *file);
 int wait (pid_t);
 bool create (const char *file, unsigned initial_size);

@@ -3,7 +3,6 @@
 #include "../syscall-nr.h"
 
 __attribute__((always_inline))
-<<<<<<< Updated upstream
 static __inline int64_t syscall (uint64_t num_, uint64_t a1_, uint64_t a2_,
 		uint64_t a3_, uint64_t a4_, uint64_t a5_, uint64_t a6_) {
 	int64_t ret;
@@ -15,11 +14,6 @@ static __inline int64_t syscall (uint64_t num_, uint64_t a1_, uint64_t a2_,
 	register uint64_t *a5 asm ("r8") = (uint64_t *) a5_;
 	register uint64_t *a6 asm ("r9") = (uint64_t *) a6_;
 
-=======
-static __inline int64_t syscall(uint64_t num, uint64_t a1, uint64_t a2,
-		uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6) {
-	int64_t ret;
->>>>>>> Stashed changes
 	__asm __volatile(
 			"mov %1, %%rax\n"
 			"mov %2, %%rdi\n"
@@ -37,7 +31,6 @@ static __inline int64_t syscall(uint64_t num, uint64_t a1, uint64_t a2,
 
 /* Invokes syscall NUMBER, passing no arguments, and returns the
    return value as an `int'. */
-<<<<<<< Updated upstream
 #define syscall0(NUMBER) ( \
 		syscall(((uint64_t) NUMBER), 0, 0, 0, 0, 0, 0))
 
@@ -75,18 +68,6 @@ static __inline int64_t syscall(uint64_t num, uint64_t a1, uint64_t a2,
 			((uint64_t) ARG3), \
 			((uint64_t) ARG4), \
 			0))
-=======
-#define syscall0(NUMBER) (syscall((NUMBER), 0, 0, 0, 0, 0, 0))
-
-/* Invokes syscall NUMBER, passing argument ARG0, and returns the
-   return value as an `int'. */
-#define syscall1(NUMBER, ARG0) (syscall((NUMBER), (ARG0), 0, 0, 0, 0, 0))
-/* Invokes syscall NUMBER, passing arguments ARG0 and ARG1, and
-   returns the return value as an `int'. */
-#define syscall2(NUMBER, ARG0, ARG1) (syscall((NUMBER), (ARG0), (ARG1), 0, 0, 0, 0))
-#define syscall3(NUMBER, ARG0, ARG1, ARG2) (syscall((NUMBER), (ARG0), (ARG1), (ARG2), 0, 0, 0))
-
->>>>>>> Stashed changes
 void
 halt (void) {
 	syscall0 (SYS_HALT);
@@ -100,13 +81,8 @@ exit (int status) {
 }
 
 pid_t
-<<<<<<< Updated upstream
 fork (const char *thread_name){
 	return (pid_t) syscall1 (SYS_FORK, thread_name);
-=======
-fork (const char *name) {
-	return (pid_t) syscall1 (SYS_FORK, name);
->>>>>>> Stashed changes
 }
 
 int
