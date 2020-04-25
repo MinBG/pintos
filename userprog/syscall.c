@@ -7,6 +7,14 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "threads/init.h"
+#include "userprog/process.h"
+#include "threads/vaddr.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "devices/input.h"
+#include "lib/kernel/console.h"
+#include "lib/string.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -38,9 +46,166 @@ syscall_init (void) {
 }
 
 /* The main system call interface */
+
 void
-syscall_handler (struct intr_frame *f UNUSED) {
+syscall_handler (struct intr_frame *f UNUSED) { 
 	// TODO: Your implementation goes here.
-	printf ("system call!\n");
-	thread_exit ();
+	//printf ("system call!\n");
+	switch(f->R.rax){
+		case SYS_HALT: 
+			halt();
+			break;
+		case SYS_EXIT:
+			exit((int)f->R.rdi);
+			break;
+		case SYS_FORK: 
+			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
+			f->R.rax = (uint64_t)fork((char *)f->R.rdi,f);
+			break;
+		case SYS_EXEC: 
+			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
+			f->R.rax = (uint64_t)exec((char*)f->R.rdi);
+			break;
+		case SYS_WAIT: 
+			f->R.rax = (uint64_t)wait((tid_t)f->R.rdi);
+			break;
+		case SYS_CREATE: 
+			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
+			f->R.rax = (uint64_t)create((const char *)f->R.rdi,(unsigned) f->R.rsi);
+			break;
+		case SYS_REMOVE: 
+			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
+			f->R.rax = (uint64_t)remove((const char *)f->R.rdi);
+			break;
+		case SYS_OPEN: 
+			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
+			f->R.rax = (uint64_t)open((const char *)f->R.rdi);
+			break;
+		case SYS_FILESIZE: 
+			f->R.rax = (uint64_t)filesize((int)f->R.rdi);
+			break;
+		case SYS_READ:
+			if(is_kernel_vaddr((char*)f->R.rsi)){exit(-1);}
+			f->R.rax = (uint64_t)read((int)f->R.rdi,(void *)f->R.rsi,(unsigned)f->R.rdx);
+			break;
+		case SYS_WRITE: 
+			if(is_kernel_vaddr((char*)f->R.rsi)){exit(-1);}
+			f->R.rax = (uint64_t)write((int)f->R.rdi, (const void *)f->R.rsi, (unsigned)f->R.rdx);
+			break;
+		case SYS_SEEK: 
+			seek((int)f->R.rdi,(unsigned)f->R.rsi);
+			break;
+		case SYS_TELL: 
+			f->R.rax = (uint64_t)tell((int)f->R.rdi);
+			break;
+		case SYS_CLOSE: 
+			close((int)f->R.rdi);
+			break;
+		default: 
+			thread_exit();
+	}
+} 
+
+
+void
+halt(void) {
+	power_off();
 }
+
+void
+exit(int status) {
+	printf("%s: exit(%d)\n", thread_current()->name,status);
+	thread_exit();
+}
+
+tid_t
+fork (char *thread_name, struct intr_frame *f){
+	return process_fork(thread_name,f);
+}
+
+int
+exec (char *file){
+	return process_exec(file);
+}
+
+int
+wait (tid_t pid){
+	return (int) process_wait(pid);
+}
+
+bool
+create (const char *file, unsigned initial_size){
+	return filesys_create(file, initial_size);
+}
+
+bool
+remove (const char *file){
+	return filesys_remove(file);
+}
+
+int
+open (const char *file){
+	struct file * opened;
+	opened = filesys_open(file);
+	if (opened == NULL) { return -1; }
+	if (thread_current()->fd_num > 127) {
+		return -1;
+	}
+	thread_current()->fd_list[thread_current()->fd_num+2] = opened;
+	thread_current()->fd_num += 1;
+	return thread_current()->fd_num+1;
+}
+
+int
+filesize (int fd){
+	struct file * opened = thread_current()->fd_list[fd];
+	return (int) file_length(opened);
+}
+
+int
+read (int fd, void *buffer, unsigned length){
+	if (fd == 0) {
+		while (length > 0) {
+			*(char *)buffer ++= input_getc();
+			length -= 1;
+		}
+		thread_current()->fd_list[0] = buffer;
+		return (int) strlen(buffer);
+	}
+	struct file * opened = thread_current()->fd_list[fd];
+	return (int) file_read(opened, buffer, (off_t) length);
+}
+
+int
+write (int fd, const void *buffer, unsigned length){ // denying write code must be added - file->deny_write (bool) 
+	if (fd == 1) { // write in console
+		putbuf(buffer, length);
+		return length;
+		}
+	else if (fd >=2) {
+		struct file * opened = thread_current()->fd_list[fd];
+		return (int) file_write(opened, buffer, (off_t) length);
+	}
+	return 0;
+}
+
+void
+seek (int fd, unsigned position){
+	struct file * opened = thread_current()->fd_list[fd];
+	file_seek(opened,(off_t) position);
+}
+
+unsigned
+tell (int fd){
+	struct file * opened = thread_current()->fd_list[fd];
+	return (unsigned) file_tell(opened);
+}
+
+void
+close (int fd){
+	struct file * opened = thread_current()->fd_list[fd];
+	file_close(opened);
+}
+
+
+

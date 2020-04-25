@@ -38,6 +38,7 @@ process_init (void) {
  * before process_create_initd() returns. Returns the initd's
  * thread id, or TID_ERROR if the thread cannot be created.
  * Notice that THIS SHOULD BE CALLED ONCE. */
+
 tid_t
 process_create_initd (const char *file_name) {
 	char *fn_copy;
@@ -49,13 +50,26 @@ process_create_initd (const char *file_name) {
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
-
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	//===========================
+	//parse to give thread_create only the name of file
+	int parse_int=0;
+	while(1){
+		if((*(file_name+parse_int)==' ')||(*(file_name+parse_int)=='\0')){
+			break;
+		}
+		parse_int++;
+	}
+	char parser[parse_int+1];
+	strlcpy(parser,file_name,parse_int+1);
+	//=================================
+
+	tid = thread_create (parser, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
 }
+
 
 /* A thread function that launches first user process. */
 static void
@@ -76,8 +90,7 @@ initd (void *f_name) {
 tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
-	return thread_create (name,
-			PRI_DEFAULT, __do_fork, thread_current ());
+	return thread_create (name,PRI_DEFAULT, __do_fork, thread_current ());
 }
 
 #ifndef VM
@@ -178,7 +191,6 @@ process_exec (void *f_name) {
 
 	/* And then load the binary */
 	success = load (file_name, &_if);
-
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
 	if (!success)
@@ -200,10 +212,12 @@ process_exec (void *f_name) {
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) {
+process_wait (tid_t child_tid) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	int i;
+	for(i=0;i<100000000;i++);
 	return -1;
 }
 
@@ -322,6 +336,21 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
  * Returns true if successful, false otherwise. */
 static bool
 load (const char *file_name, struct intr_frame *if_) {
+
+	//===========================
+	//parse to give thread_create only the name of file
+	int parse_int=0;
+	while(1){
+		if((*(file_name+parse_int)==' ')||(*(file_name+parse_int)=='\0')){
+			break;
+		}
+		parse_int++;
+	}
+	char parser[parse_int+1];
+	strlcpy(parser,file_name,parse_int+1);
+	//=================================
+
+
 	struct thread *t = thread_current ();
 	struct ELF ehdr;
 	struct file *file = NULL;
@@ -336,9 +365,11 @@ load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());
 
 	/* Open executable file. */
-	file = filesys_open (file_name);
+	//file = filesys_open (file_name);
+	file = filesys_open (parser);
 	if (file == NULL) {
-		printf ("load: %s: open failed\n", file_name);
+		//printf ("load: %s: open failed\n", file_name);
+		printf ("load: %s: open failed\n", parser);
 		goto done;
 	}
 
@@ -350,7 +381,8 @@ load (const char *file_name, struct intr_frame *if_) {
 			|| ehdr.e_version != 1
 			|| ehdr.e_phentsize != sizeof (struct Phdr)
 			|| ehdr.e_phnum > 1024) {
-		printf ("load: %s: error loading executable\n", file_name);
+		//printf ("load: %s: error loading executable\n", file_name);
+		printf ("load: %s: error loading executable\n", parser);
 		goto done;
 	}
 
@@ -416,7 +448,51 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+	{     
+		char *just_for_strtok_r;
+		char * parsed[50];   
+		int argc = 0; 
+		char * parse_here=strtok_r((char*)file_name, " ", &just_for_strtok_r);
+		while(parse_here!=NULL){
+			parsed[argc]=parse_here;
+			argc++;
+			parse_here=strtok_r((char*)NULL, " ", &just_for_strtok_r);
+		}
+		// put parsed objects to USER STACK
+		int parse_number;
+		uintptr_t argv_position[argc]; //save temporarily the position of argv stored in USER STACK 
+		char * work_here=(char*)(if_->rsp);
+		for(parse_number=argc-1;parse_number>=0;parse_number--){
+			work_here-=1; //for ’\0’ 
+			*work_here='\0';
+			work_here-=strlen(parsed[parse_number]);
+			argv_position[parse_number]=work_here;
+			strlcpy(work_here,parsed[parse_number],strlen(parsed[parse_number])+1);
+		}
+		int left=((uintptr_t)work_here)%8; //word align
+		if(left!=0){
+			for(parse_number=0;parse_number<left;parse_number++){
+				work_here-=1;
+				*(uint8_t *)work_here=(uint8_t)0;
+			}
+		}
+		work_here-=sizeof(char*);
+		*(void**)work_here=NULL;
+		for(parse_number=argc-1;parse_number>=0;parse_number--){
+			work_here-=sizeof(char*);
+			*(char**)work_here=(char*)argv_position[parse_number];
+			if(parse_number==0){
+				if_->R.rsi=(uint64_t)(uintptr_t)work_here;
+			}
+		}
+		if_->R.rdi=(uint64_t)argc;
+		work_here-=sizeof(void*);
+		*(void**)work_here=NULL;
+		if_->rsp=(uintptr_t)work_here;
+	
+	}
 
+	//hex_dump(if_->rsp, (char*)if_->rsp,0x47480000-if_->rsp,true );
 	success = true;
 
 done:

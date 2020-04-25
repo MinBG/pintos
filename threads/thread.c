@@ -477,6 +477,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	list_init(&t->donating) ;
 	t->nice=0;
 	t->r_cpu=0;
+	t->fd_num=0;
 
 	list_push_front(&total_thread, &t->tellem);
 
