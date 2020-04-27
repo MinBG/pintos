@@ -3,6 +3,7 @@
 
 
 #include "threads/thread.h"
+#include "threads/synch.h" // added on project2
 
 void syscall_init (void);
 

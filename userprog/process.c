@@ -18,6 +18,7 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -67,6 +68,8 @@ process_create_initd (const char *file_name) {
 	tid = thread_create (parser, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
+
+
 	return tid;
 }
 
@@ -105,21 +108,26 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	bool writable;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
+	if (parent->pml4 == NULL || is_kernel_vaddr(parent->pml4)) {return false;}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
+	newpage = palloc_get_page(0);
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
+	memcpy(newpage, parent_page, PGSIZE);
+	
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+		return false;
 	}
 	return true;
 }
@@ -136,6 +144,10 @@ __do_fork (void *aux) {
 	struct thread *current = thread_current ();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame *parent_if;
+
+	parent_if = &parent->tf; // tell parent_if is intr frame of pthread
+	if_ = current->tf;
+
 	bool succ = true;
 
 	/* 1. Read the cpu context to local stack. */
@@ -150,9 +162,11 @@ __do_fork (void *aux) {
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
+		current->tid = TID_ERROR; // when fork fails to duplicate content, it must return TID_ERROR
 		goto error;
 #else
-	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
+	if (parent->pml4 == NULL||!pml4_for_each (parent->pml4, duplicate_pte, parent))
+		current->tid = TID_ERROR;
 		goto error;
 #endif
 
@@ -161,14 +175,23 @@ __do_fork (void *aux) {
 	 * TODO:       in include/filesys/file.h. Note that parent should not return
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
+	int i = 0;
+	while (i<128) {
+		struct file * temp_f_ptr = parent->fd_list[i];
+		if (temp_f_ptr != NULL) {
+			current->fd_list[i] = file_duplicate(temp_f_ptr);
+		}
+		i +=1;
+	}
 
 	process_init ();
 
 	/* Finally, switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
+	return;
 error:
-	thread_exit ();
+	exit(-1);
 }
 
 /* Switch the current execution context to the f_name.
@@ -191,7 +214,7 @@ process_exec (void *f_name) {
 
 	/* And then load the binary */
 	success = load (file_name, &_if);
-	/* If load failed, quit. */
+	/* If load failed, quit.__ */
 	palloc_free_page (file_name);
 	if (!success)
 		return -1;
@@ -216,6 +239,7 @@ process_wait (tid_t child_tid) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+
 	int i;
 	for(i=0;i<100000000;i++);
 	return -1;

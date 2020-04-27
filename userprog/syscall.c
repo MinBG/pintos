@@ -15,6 +15,9 @@
 #include "devices/input.h"
 #include "lib/kernel/console.h"
 #include "lib/string.h"
+#include "threads/synch.h"
+
+struct lock read_write_lock;
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -43,6 +46,8 @@ syscall_init (void) {
 	 * mode stack. Therefore, we masked the FLAG_FL. */
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
+
+	lock_init(&read_write_lock);
 }
 
 /* The main system call interface */
@@ -59,37 +64,30 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			exit((int)f->R.rdi);
 			break;
 		case SYS_FORK: 
-			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
-			f->R.rax = (uint64_t)fork((char *)f->R.rdi,f);
+			f->R.rax = (uint64_t)fork((char *)f->R.rdi, f);
 			break;
 		case SYS_EXEC: 
-			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
 			f->R.rax = (uint64_t)exec((char*)f->R.rdi);
 			break;
 		case SYS_WAIT: 
 			f->R.rax = (uint64_t)wait((tid_t)f->R.rdi);
 			break;
 		case SYS_CREATE: 
-			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
 			f->R.rax = (uint64_t)create((const char *)f->R.rdi,(unsigned) f->R.rsi);
 			break;
 		case SYS_REMOVE: 
-			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
 			f->R.rax = (uint64_t)remove((const char *)f->R.rdi);
 			break;
 		case SYS_OPEN: 
-			if(is_kernel_vaddr((char*)f->R.rdi)){exit(-1);}
 			f->R.rax = (uint64_t)open((const char *)f->R.rdi);
 			break;
 		case SYS_FILESIZE: 
 			f->R.rax = (uint64_t)filesize((int)f->R.rdi);
 			break;
 		case SYS_READ:
-			if(is_kernel_vaddr((char*)f->R.rsi)){exit(-1);}
-			f->R.rax = (uint64_t)read((int)f->R.rdi,(void *)f->R.rsi,(unsigned)f->R.rdx);
+			f->R.rax = (uint64_t)read((int)f->R.rdi,(void*)f->R.rsi, (unsigned)f->R.rdx);
 			break;
 		case SYS_WRITE: 
-			if(is_kernel_vaddr((char*)f->R.rsi)){exit(-1);}
 			f->R.rax = (uint64_t)write((int)f->R.rdi, (const void *)f->R.rsi, (unsigned)f->R.rdx);
 			break;
 		case SYS_SEEK: 
@@ -102,7 +100,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			close((int)f->R.rdi);
 			break;
 		default: 
-			thread_exit();
+			exit(-1);
 	}
 } 
 
@@ -120,11 +118,13 @@ exit(int status) {
 
 tid_t
 fork (char *thread_name, struct intr_frame *f){
+if(is_kernel_vaddr(thread_name)){exit(-1);}
 	return process_fork(thread_name,f);
 }
 
 int
 exec (char *file){
+	if(is_kernel_vaddr(file)){exit(-1);}
 	return process_exec(file);
 }
 
@@ -135,22 +135,24 @@ wait (tid_t pid){
 
 bool
 create (const char *file, unsigned initial_size){
+	if(is_kernel_vaddr(file)){exit(-1);}
+	if (file == NULL) {exit(-1);}
 	return filesys_create(file, initial_size);
 }
 
 bool
 remove (const char *file){
+	if(is_kernel_vaddr(file)){exit(-1);}
 	return filesys_remove(file);
 }
 
 int
 open (const char *file){
+	if(file==NULL){exit(-1);} 
 	struct file * opened;
 	opened = filesys_open(file);
-	if (opened == NULL) { return -1; }
-	if (thread_current()->fd_num > 127) {
-		return -1;
-	}
+	if (opened == NULL) { return -1; } 
+	if (thread_current()->fd_num > 127) {return -1;}
 	thread_current()->fd_list[thread_current()->fd_num+2] = opened;
 	thread_current()->fd_num += 1;
 	return thread_current()->fd_num+1;
@@ -158,54 +160,84 @@ open (const char *file){
 
 int
 filesize (int fd){
+	if((fd<0)||(fd>127)){ exit(-1); }
 	struct file * opened = thread_current()->fd_list[fd];
 	return (int) file_length(opened);
 }
 
+
 int
 read (int fd, void *buffer, unsigned length){
+	if(is_kernel_vaddr(buffer)){exit(-1);}
+	if((fd<0)||(fd>127)){ //not valid fd
+		exit(-1);
+}
+	lock_acquire(&read_write_lock);
+	int return_value=0;
 	if (fd == 0) {
 		while (length > 0) {
 			*(char *)buffer ++= input_getc();
 			length -= 1;
 		}
 		thread_current()->fd_list[0] = buffer;
-		return (int) strlen(buffer);
+		return_value=(int) strlen(buffer);
+		lock_release(&read_write_lock);
+		return return_value;
 	}
 	struct file * opened = thread_current()->fd_list[fd];
-	return (int) file_read(opened, buffer, (off_t) length);
+	return_value=(int) file_read(opened, buffer, (off_t) length);
+	lock_release(&read_write_lock);
+	return return_value;
 }
 
 int
 write (int fd, const void *buffer, unsigned length){ // denying write code must be added - file->deny_write (bool) 
+	if(is_kernel_vaddr(buffer)){exit(-1);}
+	if((fd<0)||(fd>127)){ //not valid fd
+		exit(-1);
+}
+	lock_acquire(&read_write_lock);
+	int return_value=0;
 	if (fd == 1) { // write in console
 		putbuf(buffer, length);
-		return length;
+		return_value=length;
+		lock_release(&read_write_lock);
+		return return_value;
 		}
 	else if (fd >=2) {
 		struct file * opened = thread_current()->fd_list[fd];
-		return (int) file_write(opened, buffer, (off_t) length);
+		lock_release(&read_write_lock);
+		return_value=(int) file_write(opened, buffer, (off_t) length);
+		return return_value;
 	}
-	return 0;
+	lock_release(&read_write_lock);
+	return return_value;
 }
+
+
+
+
 
 void
 seek (int fd, unsigned position){
+	if (fd<0||fd>127) {exit(-1);}
 	struct file * opened = thread_current()->fd_list[fd];
 	file_seek(opened,(off_t) position);
 }
 
 unsigned
 tell (int fd){
+	if (fd<0||fd>127) {exit(-1);}
 	struct file * opened = thread_current()->fd_list[fd];
 	return (unsigned) file_tell(opened);
 }
 
 void
 close (int fd){
+	if (fd<0||fd>127) {exit(-1);}
 	struct file * opened = thread_current()->fd_list[fd];
+	thread_current()->fd_list[fd] = NULL;
+	if (opened == NULL) {exit(-1);}
 	file_close(opened);
 }
-
-
 
