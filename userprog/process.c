@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "intrinsic.h"
 #include "threads/synch.h"
+#include "userprog/syscall.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -66,6 +67,7 @@ process_create_initd (const char *file_name) {
 	//=================================
 
 	tid = thread_create (parser, PRI_DEFAULT, initd, fn_copy);
+	//sema_down(&thread_current()->sema_load);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 
@@ -80,7 +82,6 @@ initd (void *f_name) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
-
 	process_init ();
 
 	if (process_exec (f_name) < 0)
@@ -93,7 +94,21 @@ initd (void *f_name) {
 tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
-	return thread_create (name,PRI_DEFAULT, __do_fork, thread_current ());
+	enum intr_level old_level;
+	old_level = intr_disable();
+	struct thread *curr=thread_current();
+//	printf("process fork entered 1\n");
+	tid_t create_result= thread_create (name,PRI_DEFAULT, __do_fork, curr);
+	sema_down(&thread_current()->sema_load);
+
+	if(curr == running_thread()->parent){ //if child process
+		intr_set_level(old_level);
+		printf("child %d, result %d\n",thread_current()->tid,create_result);
+		return 0;
+	}
+	intr_set_level(old_level);
+	printf("parent %d, result %d\n",thread_current()->tid,create_result);
+	return create_result;
 }
 
 #ifndef VM
@@ -106,9 +121,14 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	void *parent_page;
 	void *newpage;
 	bool writable;
+//	printf("duplicated pte entered 1\n");
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
-	if (parent->pml4 == NULL || is_kernel_vaddr(parent->pml4)) {return false;}
+
+	if (is_kern_pte(pte)) {
+//		printf("duplicated pte entered 2\n");
+		return true;
+	}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
@@ -121,14 +141,17 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
 	memcpy(newpage, parent_page, PGSIZE);
+	writable=is_writable(pte);
 	
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+//		printf("duplicated pte entered 3\n");
 		return false;
 	}
+//	printf("duplicated pte entered 4\n");
 	return true;
 }
 #endif
@@ -139,36 +162,68 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  *       this function. */
 static void
 __do_fork (void *aux) {
-	struct intr_frame if_;
+	enum intr_level old_level = intr_disable();
+//	printf("now fork:%d \n",thread_current()->tid);
+	//truct intr_frame if_;
+	struct intr_frame *if_;
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame *parent_if;
-
+//	printf("do fork entered 1\n");
 	parent_if = &parent->tf; // tell parent_if is intr frame of pthread
-	if_ = current->tf;
-
+	//if_ = current->tf;
+	if_ = &current->tf;
+//	sema_down(&parent->sema_load);
 	bool succ = true;
-
 	/* 1. Read the cpu context to local stack. */
-	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	//memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	memcpy (if_, parent_if, sizeof (struct intr_frame));
+//	printf("if_:%llx\n", (uintptr_t)if_);
+/*
+	printf("%llx, %llx\n", if_->rsp, parent_if->rsp);
+	printf("%llx, %llx\n", if_->rip, parent_if->rip);
+	printf("%llx, %llx\n", if_->R.rsi, parent_if->R.rsi);
+	printf("%llx, %llx\n", if_->R.rdi, parent_if->R.rdi);
+	printf("%llx, %llx\n", if_->R.rbx, parent_if->R.rbx);
+	printf("%llx, %llx\n", if_->R.rbp, parent_if->R.rbp);
+	printf("%llx, %llx\n", if_->R.r12, parent_if->R.r12);
+	printf("%llx, %llx\n", if_->R.r13, parent_if->R.r13);
+	printf("%llx, %llx\n", if_->R.r14, parent_if->R.r14);
+	printf("%llx, %llx\n", if_->R.r15, parent_if->R.r15);
+*/
+/*
+	printf("parent: \n");
+	hex_dump((uintptr_t)parent_if->rsp, (char*)parent_if->rsp,600,true );
+	printf("child: \n");
+	hex_dump((uintptr_t)if_->rsp, (char*)if_->rsp,600,true );
+*/
+//	printf("do fork entered 2\n");
 
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
-	if (current->pml4 == NULL)
+	if (current->pml4 == NULL){
+		current->tid = TID_ERROR;
+//		printf("do fork entered error 1\n");
 		goto error;
-
+	}
 	process_activate (current);
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
-	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
+	if (!supplemental_page_table_copy (&current->spt, &parent->spt)){
 		current->tid = TID_ERROR; // when fork fails to duplicate content, it must return TID_ERROR
+//		printf("do fork entered error 2\n");
 		goto error;
+}
 #else
-	if (parent->pml4 == NULL||!pml4_for_each (parent->pml4, duplicate_pte, parent))
+	//if ((parent->pml4 == NULL)||(!pml4_for_each (parent->pml4, duplicate_pte, parent))){
+	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)){
+//		printf("do fork entered error 3\n");
 		current->tid = TID_ERROR;
 		goto error;
+	}
 #endif
+
 
 	/* TODO: Your code goes here.
 	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
@@ -176,6 +231,7 @@ __do_fork (void *aux) {
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
 	int i = 0;
+//	printf("do fork entered 3\n");
 	while (i<128) {
 		struct file * temp_f_ptr = parent->fd_list[i];
 		if (temp_f_ptr != NULL) {
@@ -185,12 +241,23 @@ __do_fork (void *aux) {
 	}
 
 	process_init ();
-
+	current->forked=1;
+//	printf("do fork entered 4\n");
 	/* Finally, switch to the newly created process. */
-	if (succ)
-		do_iret (&if_);
-	return;
+
+
+	//current->parent=parent;
+	//list_push_front(&(parent->child), &current->child_elem);
+
+
+	if (succ){
+		sema_up(&parent->sema_load);
+		intr_set_level(old_level);
+		do_iret (if_);
+}
+
 error:
+	intr_set_level(old_level);
 	exit(-1);
 }
 
@@ -216,6 +283,7 @@ process_exec (void *f_name) {
 	success = load (file_name, &_if);
 	/* If load failed, quit.__ */
 	palloc_free_page (file_name);
+	//sema_down(&thread_current()->parent->sema_load);
 	if (!success)
 		return -1;
 
@@ -234,18 +302,47 @@ process_exec (void *f_name) {
  *
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
-int
-process_wait (tid_t child_tid) {
+
+int process_wait (tid_t child_tid) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-
-	int i;
-	for(i=0;i<100000000;i++);
+	enum intr_level old_level;
+	old_level = intr_disable();
+//	printf("wait entered\n");
+//	printf("tid: %d\n",running_thread()->tid);
+	struct list_elem *e=list_begin(&(thread_current()->child));
+	int found_child=0;
+	struct thread *thread_pointer;
+	while(!list_empty(&(thread_current()->child))){
+		thread_pointer = list_entry(e, struct thread, child_elem);
+		if (child_tid == thread_pointer->tid){
+			found_child=1;
+//			printf("wait entered 2, %d\n",thread_pointer->tid);
+			break;
+		}
+		if (e != list_end(&(thread_current()->child))) {
+			e=list_next(e);
+		} else {break;}
+	}
+//	printf("wait entered 2 \n");
+	ASSERT(thread_pointer->tf.rsp!=thread_current()->tf.rsp);
+	if(found_child==1 && thread_pointer->status == THREAD_READY){
+		sema_down(&(thread_current()->sema_exit));
+//		printf("done\n");
+//		list_remove(&thread_pointer->child_elem);
+		int ret_value=thread_pointer->exit_status;
+		sema_up(&thread_pointer->wait_to_die);
+		intr_set_level(old_level);
+		return ret_value;
+	}
+	intr_set_level(old_level);
 	return -1;
 }
 
+
 /* Exit the process. This function is called by thread_exit (). */
+
 void
 process_exit (void) {
 	struct thread *curr = thread_current ();
@@ -253,8 +350,16 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
-	process_cleanup ();
+	process_cleanup (); //page directory destroying code	
+//	printf("process exit entered 1\n");
+//	if(curr->forked==1){
+//		printf("process exit entered 2\n");
+	sema_up(&curr->parent->sema_exit);
+//		printf("process exit entered 3\n");
+	sema_down(&curr->wait_to_die);	
+//		printf("process exit entered 4\n");
+//	}	
+//	printf("process exit entered 5\n");
 }
 
 /* Free the current process's resources. */
@@ -490,7 +595,7 @@ load (const char *file_name, struct intr_frame *if_) {
 			work_here-=1; //for ’\0’ 
 			*work_here='\0';
 			work_here-=strlen(parsed[parse_number]);
-			argv_position[parse_number]=work_here;
+			argv_position[parse_number]=(uintptr_t)work_here;
 			strlcpy(work_here,parsed[parse_number],strlen(parsed[parse_number])+1);
 		}
 		int left=((uintptr_t)work_here)%8; //word align
@@ -736,3 +841,4 @@ setup_stack (struct intr_frame *if_) {
 	return success;
 }
 #endif /* VM */
+

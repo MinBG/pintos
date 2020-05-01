@@ -112,14 +112,17 @@ halt(void) {
 
 void
 exit(int status) {
+	thread_current()->exit_status=status;
 	printf("%s: exit(%d)\n", thread_current()->name,status);
 	thread_exit();
+
 }
 
 tid_t
 fork (char *thread_name, struct intr_frame *f){
-if(is_kernel_vaddr(thread_name)){exit(-1);}
-	return process_fork(thread_name,f);
+	if(is_kernel_vaddr(thread_name)){exit(-1);}
+	tid_t result = process_fork(thread_name,f);
+	return result;
 }
 
 int
@@ -240,4 +243,5 @@ close (int fd){
 	if (opened == NULL) {exit(-1);}
 	file_close(opened);
 }
+
 

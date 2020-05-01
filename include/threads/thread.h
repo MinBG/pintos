@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 #include "threads/interrupt.h"
 #ifdef VM
 #include "vm/vm.h"
@@ -17,6 +18,9 @@ enum thread_status {
 	THREAD_BLOCKED,     /* Waiting for an event to trigger. */
 	THREAD_DYING        /* About to be destroyed. */
 };
+
+struct list ready_list;
+#define running_thread() ((struct thread *) (pg_round_down (rrsp ())))
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
@@ -102,13 +106,23 @@ struct thread {
 	struct list donating; // list for threads donating to current thread
 	struct list_elem donating_elem; //for donating
 	struct list_elem tellem;
+	int forked;
 
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
-	struct file * fd_list[128];
+	struct  file * fd_list[128];
 	int fd_num;
+	struct thread *parent;
+	struct list child;
+	struct list_elem child_elem;
+	int exit_status;
+	struct semaphore sema_load;
+	struct semaphore sema_exit;
+	struct semaphore sema_wait;
+	struct semaphore wait_to_die;
+
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
@@ -169,4 +183,6 @@ void update_load_avg(void);
 void update_incr(void);
 void update_all(void);
 
+void schedule (void);
 #endif /* threads/thread.h */
+

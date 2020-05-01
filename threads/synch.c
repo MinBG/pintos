@@ -86,13 +86,15 @@ void sema_down (struct semaphore *sema) {
 
 	ASSERT (sema != NULL);
 	ASSERT (!intr_context ());
-
+	struct thread * curr = thread_current();
+	
 	old_level = intr_disable ();
 	while (sema->value == 0) {
-		list_insert_ordered (&sema->waiters, &thread_current()->elem, max_priority_func,NULL);
+//		printf("tid: %d\n",list_entry(list_begin(&ready_list),struct thread,elem)->tid);
+		list_insert_ordered (&sema->waiters, &(curr->elem), max_priority_func,NULL);
 		thread_block ();
 	}
-
+	ASSERT(thread_current()->status == THREAD_RUNNING);
 	sema->value--;
 	intr_set_level (old_level);
 }
@@ -135,11 +137,9 @@ sema_up (struct semaphore *sema) {
 	old_level = intr_disable ();
 	if (!list_empty(&sema->waiters)){
 		list_sort(&sema->waiters, max_priority_func, NULL);
-		//thread_unblock (list_entry (list_pop_front(&sema->waiters),struct thread, elem));
 		struct list_elem *max_thread_now=list_max(&sema->waiters,min_priority_func,NULL);
 		list_remove(max_thread_now);
 		thread_unblock (list_entry (max_thread_now,struct thread, elem));
-		////thread_unblock (list_entry (list_max(&sema->waiters,min_priority_func,NULL) ,struct thread, elem));
 		sema->value++;
 		thread_preemption_func();
 	}else{
