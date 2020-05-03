@@ -105,7 +105,10 @@ struct thread {
 	struct list_elem donating_elem; //for donating
 	struct list_elem tellem;
 	int forked;
-
+	int fd_num;
+	struct thread *parent;
+	struct list child;
+	struct list_elem child_elem;
 
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
@@ -119,10 +122,7 @@ struct thread {
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
-	int fd_num;
-	struct thread *parent;
-	struct list child;
-	struct list_elem child_elem;
+
 	int exit_status;
 	struct semaphore sema_load;
 	struct semaphore sema_exit;
