@@ -35,7 +35,7 @@ static struct list total_thread;
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
-struct list ready_list;
+static struct list ready_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -69,7 +69,7 @@ static void idle (void *aux UNUSED);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
-void schedule (void);
+static void schedule (void);
 static tid_t allocate_tid (void);
 
 /* Returns true if T appears to point to a valid thread. */
@@ -206,6 +206,8 @@ thread_create (const char *name, int priority,
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
+	t->parent=thread_current();
+	list_push_front(&(thread_current()->child), &t->child_elem);
 	t->tf.rip = (uintptr_t) kernel_thread;
 	t->tf.R.rdi = (uint64_t) function;
 	t->tf.R.rsi = (uint64_t) aux;
@@ -214,11 +216,7 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
-#ifdef USERPROG
-	t->parent=thread_current();
-	list_push_front(&(thread_current()->child), &t->child_elem);
-#endif	
-
+	
 	/* Add to run queue. */
 	thread_unblock (t);
 	thread_preemption_func();
@@ -235,10 +233,8 @@ void
 thread_block (void) {
 	ASSERT (!intr_context ());
 	ASSERT (intr_get_level () == INTR_OFF);
-//	list_remove(&thread_current()->elem);
-//	thread_current ()->status = THREAD_BLOCKED;
-//	schedule ();
-	do_schedule(THREAD_BLOCKED);
+	thread_current ()->status = THREAD_BLOCKED;
+	schedule ();
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -483,19 +479,17 @@ init_thread (struct thread *t, const char *name, int priority) {
 	list_init(&t->donating) ;
 	t->nice=0;
 	t->r_cpu=0;
-
-	list_push_front(&total_thread, &t->tellem);
-
-#ifdef USERPROG
 	t->fd_num=0;
 	t->forked=0;
-
+	list_push_front(&total_thread, &t->tellem);
+#ifdef USERPROG
 	list_init(&t->child);
 	sema_init(&t->sema_load,0);
 	sema_init(&t->wait_to_die,0);
 	sema_init(&t->sema_wait,0);
 	sema_init(&t->sema_exit,0);
-	t->parent=NULL;// if has parent, add at duplicate pte function
+
+
 #endif
 
 
@@ -622,12 +616,13 @@ thread_launch (struct thread *th) {
 static void
 do_schedule(int status) {
 	ASSERT (intr_get_level () == INTR_OFF);
+	ASSERT (thread_current()->status == THREAD_RUNNING);
 	while (!list_empty (&destruction_req)) {
 		struct thread *victim =
 			list_entry (list_pop_front (&destruction_req), struct thread, elem);
 		palloc_free_page(victim);
 	}
-	thread_current()->status = status;
+	thread_current ()->status = status;
 	schedule ();
 }
 
@@ -741,7 +736,7 @@ void update_all(void){
     }
 }
 
-void
+static void
 schedule (void) {
 	struct thread *curr = running_thread ();
 	struct thread *next = next_thread_to_run ();

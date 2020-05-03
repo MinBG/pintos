@@ -25,7 +25,7 @@
 #endif
 
 static void process_cleanup (void);
-static bool load (const char *file_name, struct intr_frame *if_);
+//static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 
@@ -67,7 +67,10 @@ process_create_initd (const char *file_name) {
 	//=================================
 
 	tid = thread_create (parser, PRI_DEFAULT, initd, fn_copy);
-	//sema_down(&thread_current()->sema_load);
+
+	sema_down(&thread_current()->sema_load);
+
+
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 
@@ -91,25 +94,20 @@ initd (void *f_name) {
 
 /* Clones the current process as `name`. Returns the new process's thread id, or
  * TID_ERROR if the thread cannot be created. */
-tid_t
-process_fork (const char *name, struct intr_frame *if_ UNUSED) {
-	/* Clone current thread to new thread.*/
-	enum intr_level old_level;
-	old_level = intr_disable();
-	struct thread *curr=thread_current();
-//	printf("process fork entered 1\n");
-	tid_t create_result= thread_create (name,PRI_DEFAULT, __do_fork, curr);
-	sema_down(&thread_current()->sema_load);
 
-	if(curr == running_thread()->parent){ //if child process
-		intr_set_level(old_level);
-		printf("child %d, result %d\n",thread_current()->tid,create_result);
+tid_t
+process_fork (const char *name, struct intr_frame *if_) {
+	struct thread *curr=thread_current();
+	memcpy(&(curr->tf_saver),if_,sizeof(struct intr_frame));
+	tid_t create_result= thread_create (name,PRI_DEFAULT, __do_fork, curr);
+	sema_down(&thread_current()->sema_wait);
+	if(running_thread()->tid==create_result){
 		return 0;
 	}
-	intr_set_level(old_level);
-	printf("parent %d, result %d\n",thread_current()->tid,create_result);
 	return create_result;
 }
+
+
 
 #ifndef VM
 /* Duplicate the parent's address space by passing this function to the
@@ -121,12 +119,10 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	void *parent_page;
 	void *newpage;
 	bool writable;
-//	printf("duplicated pte entered 1\n");
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
 
 	if (is_kern_pte(pte)) {
-//		printf("duplicated pte entered 2\n");
 		return true;
 	}
 
@@ -148,10 +144,8 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
-//		printf("duplicated pte entered 3\n");
 		return false;
 	}
-//	printf("duplicated pte entered 4\n");
 	return true;
 }
 #endif
@@ -162,49 +156,23 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  *       this function. */
 static void
 __do_fork (void *aux) {
-	enum intr_level old_level = intr_disable();
-//	printf("now fork:%d \n",thread_current()->tid);
 	//truct intr_frame if_;
 	struct intr_frame *if_;
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame *parent_if;
-//	printf("do fork entered 1\n");
-	parent_if = &parent->tf; // tell parent_if is intr frame of pthread
-	//if_ = current->tf;
+	parent_if=&parent->tf_saver; // tell parent_if is intr frame of pthread
 	if_ = &current->tf;
-//	sema_down(&parent->sema_load);
+
 	bool succ = true;
 	/* 1. Read the cpu context to local stack. */
-	//memcpy (&if_, parent_if, sizeof (struct intr_frame));
 	memcpy (if_, parent_if, sizeof (struct intr_frame));
-//	printf("if_:%llx\n", (uintptr_t)if_);
-/*
-	printf("%llx, %llx\n", if_->rsp, parent_if->rsp);
-	printf("%llx, %llx\n", if_->rip, parent_if->rip);
-	printf("%llx, %llx\n", if_->R.rsi, parent_if->R.rsi);
-	printf("%llx, %llx\n", if_->R.rdi, parent_if->R.rdi);
-	printf("%llx, %llx\n", if_->R.rbx, parent_if->R.rbx);
-	printf("%llx, %llx\n", if_->R.rbp, parent_if->R.rbp);
-	printf("%llx, %llx\n", if_->R.r12, parent_if->R.r12);
-	printf("%llx, %llx\n", if_->R.r13, parent_if->R.r13);
-	printf("%llx, %llx\n", if_->R.r14, parent_if->R.r14);
-	printf("%llx, %llx\n", if_->R.r15, parent_if->R.r15);
-*/
-/*
-	printf("parent: \n");
-	hex_dump((uintptr_t)parent_if->rsp, (char*)parent_if->rsp,600,true );
-	printf("child: \n");
-	hex_dump((uintptr_t)if_->rsp, (char*)if_->rsp,600,true );
-*/
-//	printf("do fork entered 2\n");
 
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
 	if (current->pml4 == NULL){
 		current->tid = TID_ERROR;
-//		printf("do fork entered error 1\n");
 		goto error;
 	}
 	process_activate (current);
@@ -212,13 +180,11 @@ __do_fork (void *aux) {
 	supplemental_page_table_init (&current->spt);
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt)){
 		current->tid = TID_ERROR; // when fork fails to duplicate content, it must return TID_ERROR
-//		printf("do fork entered error 2\n");
 		goto error;
 }
 #else
 	//if ((parent->pml4 == NULL)||(!pml4_for_each (parent->pml4, duplicate_pte, parent))){
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)){
-//		printf("do fork entered error 3\n");
 		current->tid = TID_ERROR;
 		goto error;
 	}
@@ -231,7 +197,6 @@ __do_fork (void *aux) {
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
 	int i = 0;
-//	printf("do fork entered 3\n");
 	while (i<128) {
 		struct file * temp_f_ptr = parent->fd_list[i];
 		if (temp_f_ptr != NULL) {
@@ -241,23 +206,15 @@ __do_fork (void *aux) {
 	}
 
 	process_init ();
-	current->forked=1;
-//	printf("do fork entered 4\n");
 	/* Finally, switch to the newly created process. */
-
-
-	//current->parent=parent;
-	//list_push_front(&(parent->child), &current->child_elem);
-
-
+	if_->R.rax=0;
+	sema_up(&parent->sema_wait);
 	if (succ){
-		sema_up(&parent->sema_load);
-		intr_set_level(old_level);
 		do_iret (if_);
 }
-
+	return;
 error:
-	intr_set_level(old_level);
+	//thread_exit();
 	exit(-1);
 }
 
@@ -281,13 +238,17 @@ process_exec (void *f_name) {
 
 	/* And then load the binary */
 	success = load (file_name, &_if);
+	
 	/* If load failed, quit.__ */
 	palloc_free_page (file_name);
-	//sema_down(&thread_current()->parent->sema_load);
-	if (!success)
-		return -1;
 
+	sema_up(&thread_current()->parent->sema_load);
+
+	if (!success){
+		return -1;
+	}
 	/* Start switched process. */
+
 	do_iret (&_if);
 	NOT_REACHED ();
 }
@@ -303,40 +264,29 @@ process_exec (void *f_name) {
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
 
+
 int process_wait (tid_t child_tid) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	enum intr_level old_level;
-	old_level = intr_disable();
-//	printf("wait entered\n");
-//	printf("tid: %d\n",running_thread()->tid);
 	struct list_elem *e=list_begin(&(thread_current()->child));
 	int found_child=0;
 	struct thread *thread_pointer;
-	while(!list_empty(&(thread_current()->child))){
+	while(e!=list_end(&(thread_current()->child))){
 		thread_pointer = list_entry(e, struct thread, child_elem);
 		if (child_tid == thread_pointer->tid){
 			found_child=1;
-//			printf("wait entered 2, %d\n",thread_pointer->tid);
 			break;
 		}
-		if (e != list_end(&(thread_current()->child))) {
-			e=list_next(e);
-		} else {break;}
+		e=list_next(e);
 	}
-//	printf("wait entered 2 \n");
-	ASSERT(thread_pointer->tf.rsp!=thread_current()->tf.rsp);
-	if(found_child==1 && thread_pointer->status == THREAD_READY){
-		sema_down(&(thread_current()->sema_exit));
-//		printf("done\n");
-//		list_remove(&thread_pointer->child_elem);
+	if(found_child==1){
+		sema_down(&(thread_pointer->sema_exit));
+		list_remove(&(thread_pointer->child_elem));
 		int ret_value=thread_pointer->exit_status;
 		sema_up(&thread_pointer->wait_to_die);
-		intr_set_level(old_level);
 		return ret_value;
 	}
-	intr_set_level(old_level);
 	return -1;
 }
 
@@ -351,15 +301,8 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 	process_cleanup (); //page directory destroying code	
-//	printf("process exit entered 1\n");
-//	if(curr->forked==1){
-//		printf("process exit entered 2\n");
-	sema_up(&curr->parent->sema_exit);
-//		printf("process exit entered 3\n");
+	sema_up(&curr->sema_exit);
 	sema_down(&curr->wait_to_die);	
-//		printf("process exit entered 4\n");
-//	}	
-//	printf("process exit entered 5\n");
 }
 
 /* Free the current process's resources. */
@@ -463,7 +406,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
  * Returns true if successful, false otherwise. */
-static bool
+bool
 load (const char *file_name, struct intr_frame *if_) {
 
 	//===========================

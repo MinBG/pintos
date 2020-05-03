@@ -19,9 +19,6 @@ enum thread_status {
 	THREAD_DYING        /* About to be destroyed. */
 };
 
-struct list ready_list;
-#define running_thread() ((struct thread *) (pg_round_down (rrsp ())))
-
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
@@ -31,6 +28,7 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+#define running_thread() ((struct thread *) (pg_round_down (rrsp ())))
 
 /* A kernel thread or user process.
  *
@@ -131,6 +129,7 @@ struct thread {
 
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
+	struct intr_frame tf_saver;
 	unsigned magic;                     /* Detects stack overflow. */
 };
 
@@ -183,6 +182,5 @@ void update_load_avg(void);
 void update_incr(void);
 void update_all(void);
 
-void schedule (void);
 #endif /* threads/thread.h */
 

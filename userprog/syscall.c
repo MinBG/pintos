@@ -63,10 +63,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_EXIT:
 			exit((int)f->R.rdi);
 			break;
-		case SYS_FORK: 
-			f->R.rax = (uint64_t)fork((char *)f->R.rdi, f);
+		case SYS_FORK: 		
+			memcpy(&thread_current()->tf, f, sizeof (struct intr_frame));
+			f->R.rax = (uint64_t)fork((char *)f->R.rdi);
 			break;
-		case SYS_EXEC: 
+		case SYS_EXEC:
 			f->R.rax = (uint64_t)exec((char*)f->R.rdi);
 			break;
 		case SYS_WAIT: 
@@ -115,20 +116,28 @@ exit(int status) {
 	thread_current()->exit_status=status;
 	printf("%s: exit(%d)\n", thread_current()->name,status);
 	thread_exit();
-
 }
 
 tid_t
-fork (char *thread_name, struct intr_frame *f){
+fork (char *thread_name){
 	if(is_kernel_vaddr(thread_name)){exit(-1);}
-	tid_t result = process_fork(thread_name,f);
+	tid_t result = process_fork(thread_name,&thread_current()->tf);
 	return result;
 }
+
 
 int
 exec (char *file){
 	if(is_kernel_vaddr(file)){exit(-1);}
-	return process_exec(file);
+	int str_length=strlen(file);
+	char file_name[str_length+1];
+	strlcpy(file_name,file,str_length+1);
+	bool success = load (file_name, &thread_current()->tf);
+	if(!success){
+		return -1;
+	}
+	do_iret (&thread_current()->tf);
+	NOT_REACHED ();
 }
 
 int
@@ -156,9 +165,14 @@ open (const char *file){
 	opened = filesys_open(file);
 	if (opened == NULL) { return -1; } 
 	if (thread_current()->fd_num > 127) {return -1;}
+	if (strcmp(thread_current()->name,file) == 0) {file_deny_write(opened);}
 	thread_current()->fd_list[thread_current()->fd_num+2] = opened;
+
 	thread_current()->fd_num += 1;
 	return thread_current()->fd_num+1;
+
+
+
 }
 
 int
@@ -188,6 +202,9 @@ read (int fd, void *buffer, unsigned length){
 		return return_value;
 	}
 	struct file * opened = thread_current()->fd_list[fd];
+
+//	file_deny_write(opened);
+
 	return_value=(int) file_read(opened, buffer, (off_t) length);
 	lock_release(&read_write_lock);
 	return return_value;
@@ -195,10 +212,11 @@ read (int fd, void *buffer, unsigned length){
 
 int
 write (int fd, const void *buffer, unsigned length){ // denying write code must be added - file->deny_write (bool) 
+
 	if(is_kernel_vaddr(buffer)){exit(-1);}
 	if((fd<0)||(fd>127)){ //not valid fd
 		exit(-1);
-}
+		}
 	lock_acquire(&read_write_lock);
 	int return_value=0;
 	if (fd == 1) { // write in console
@@ -209,8 +227,12 @@ write (int fd, const void *buffer, unsigned length){ // denying write code must 
 		}
 	else if (fd >=2) {
 		struct file * opened = thread_current()->fd_list[fd];
-		lock_release(&read_write_lock);
+		if(opened->deny_write){
+			lock_release(&read_write_lock);
+			return 0;   
+		}
 		return_value=(int) file_write(opened, buffer, (off_t) length);
+		lock_release(&read_write_lock);
 		return return_value;
 	}
 	lock_release(&read_write_lock);
@@ -241,6 +263,9 @@ close (int fd){
 	struct file * opened = thread_current()->fd_list[fd];
 	thread_current()->fd_list[fd] = NULL;
 	if (opened == NULL) {exit(-1);}
+
+	file_allow_write(opened);
+
 	file_close(opened);
 }
 
