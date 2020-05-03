@@ -107,21 +107,6 @@ struct thread {
 	int forked;
 
 
-#ifdef USERPROG
-	/* Owned by userprog/process.c. */
-	uint64_t *pml4;                     /* Page map level 4 */
-	struct  file * fd_list[128];
-	int fd_num;
-	struct thread *parent;
-	struct list child;
-	struct list_elem child_elem;
-	int exit_status;
-	struct semaphore sema_load;
-	struct semaphore sema_exit;
-	struct semaphore sema_wait;
-	struct semaphore wait_to_die;
-
-#endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;
@@ -131,6 +116,21 @@ struct thread {
 	struct intr_frame tf;               /* Information for switching */
 	struct intr_frame tf_saver;
 	unsigned magic;                     /* Detects stack overflow. */
+#ifdef USERPROG
+	/* Owned by userprog/process.c. */
+	uint64_t *pml4;                     /* Page map level 4 */
+	int fd_num;
+	struct thread *parent;
+	struct list child;
+	struct list_elem child_elem;
+	int exit_status;
+	struct semaphore sema_load;
+	struct semaphore sema_exit;
+	struct semaphore sema_wait;
+	struct semaphore wait_to_die;
+	struct  file * fd_list[];
+
+#endif
 };
 
 /* If false (default), use round-robin scheduler.

@@ -53,9 +53,7 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 	/* Create a new thread to execute FILE_NAME. */
-	//===========================
-	//parse to give thread_create only the name of file
-	int parse_int=0;
+	int parse_int=0; //parse to give thread_create only the name of file
 	while(1){
 		if((*(file_name+parse_int)==' ')||(*(file_name+parse_int)=='\0')){
 			break;
@@ -64,15 +62,11 @@ process_create_initd (const char *file_name) {
 	}
 	char parser[parse_int+1];
 	strlcpy(parser,file_name,parse_int+1);
-	//=================================
+
 
 	tid = thread_create (parser, PRI_DEFAULT, initd, fn_copy);
 
 	sema_down(&thread_current()->sema_load);
-
-
-	if (tid == TID_ERROR)
-		palloc_free_page (fn_copy);
 
 
 	return tid;
@@ -183,7 +177,6 @@ __do_fork (void *aux) {
 		goto error;
 }
 #else
-	//if ((parent->pml4 == NULL)||(!pml4_for_each (parent->pml4, duplicate_pte, parent))){
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)){
 		current->tid = TID_ERROR;
 		goto error;
@@ -204,6 +197,7 @@ __do_fork (void *aux) {
 		}
 		i +=1;
 	}
+	current->fd_num = parent->fd_num;
 
 	process_init ();
 	/* Finally, switch to the newly created process. */
@@ -211,10 +205,9 @@ __do_fork (void *aux) {
 	sema_up(&parent->sema_wait);
 	if (succ){
 		do_iret (if_);
-}
-	return;
+		}
+	NOT_REACHED();
 error:
-	//thread_exit();
 	exit(-1);
 }
 
@@ -408,7 +401,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
  * Returns true if successful, false otherwise. */
 bool
 load (const char *file_name, struct intr_frame *if_) {
-
+	enum intr_level old_level;
 	//===========================
 	//parse to give thread_create only the name of file
 	int parse_int=0;
@@ -438,7 +431,9 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* Open executable file. */
 	//file = filesys_open (file_name);
+	old_level = intr_enable();
 	file = filesys_open (parser);
+	//intr_set_level(old_level);
 	if (file == NULL) {
 		//printf ("load: %s: open failed\n", file_name);
 		printf ("load: %s: open failed\n", parser);
@@ -522,7 +517,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
 	{     
 		char *just_for_strtok_r;
-		char * parsed[50];   
+		char * parsed[24];   
 		int argc = 0; 
 		char * parse_here=strtok_r((char*)file_name, " ", &just_for_strtok_r);
 		while(parse_here!=NULL){

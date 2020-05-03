@@ -16,6 +16,7 @@
 #include "lib/kernel/console.h"
 #include "lib/string.h"
 #include "threads/synch.h"
+#include "threads/interrupt.h"
 
 struct lock read_write_lock;
 
@@ -67,7 +68,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			memcpy(&thread_current()->tf, f, sizeof (struct intr_frame));
 			f->R.rax = (uint64_t)fork((char *)f->R.rdi);
 			break;
-		case SYS_EXEC:
+		case SYS_EXEC: 
 			f->R.rax = (uint64_t)exec((char*)f->R.rdi);
 			break;
 		case SYS_WAIT: 
@@ -115,6 +116,12 @@ void
 exit(int status) {
 	thread_current()->exit_status=status;
 	printf("%s: exit(%d)\n", thread_current()->name,status);
+	for (int i = 2;i<128;i++) {
+		if (thread_current()->fd_list[i] != NULL) {
+			file_close(thread_current()->fd_list[i]);
+			thread_current()->fd_list[i] = NULL;
+		}
+	}
 	thread_exit();
 }
 
@@ -161,18 +168,26 @@ remove (const char *file){
 int
 open (const char *file){
 	if(file==NULL){exit(-1);} 
+	enum intr_level old_level;
 	struct file * opened;
+	
+	old_level = intr_enable();
 	opened = filesys_open(file);
-	if (opened == NULL) { return -1; } 
-	if (thread_current()->fd_num > 127) {return -1;}
+	intr_set_level(old_level);
+	if (opened == NULL) {
+		intr_set_level(old_level);
+		return -1; } 
+	if (thread_current()->fd_num > 126) {
+		file_close(opened);
+		intr_set_level(old_level);	
+		return -1;
+	}
 	if (strcmp(thread_current()->name,file) == 0) {file_deny_write(opened);}
 	thread_current()->fd_list[thread_current()->fd_num+2] = opened;
 
 	thread_current()->fd_num += 1;
+//	printf("%d fd\n",thread_current()->fd_num);
 	return thread_current()->fd_num+1;
-
-
-
 }
 
 int
@@ -185,10 +200,12 @@ filesize (int fd){
 
 int
 read (int fd, void *buffer, unsigned length){
+	enum intr_level old_level;
 	if(is_kernel_vaddr(buffer)){exit(-1);}
 	if((fd<0)||(fd>127)){ //not valid fd
 		exit(-1);
 }
+	old_level = intr_enable();
 	lock_acquire(&read_write_lock);
 	int return_value=0;
 	if (fd == 0) {
@@ -199,24 +216,25 @@ read (int fd, void *buffer, unsigned length){
 		thread_current()->fd_list[0] = buffer;
 		return_value=(int) strlen(buffer);
 		lock_release(&read_write_lock);
+		intr_set_level(old_level);
 		return return_value;
 	}
 	struct file * opened = thread_current()->fd_list[fd];
 
 //	file_deny_write(opened);
 
-	return_value=(int) file_read(opened, buffer, (off_t) length);
+	return_value=(int) file_read(opened, buffer	, (off_t) length);
 	lock_release(&read_write_lock);
+	intr_set_level(old_level);
 	return return_value;
 }
 
 int
 write (int fd, const void *buffer, unsigned length){ // denying write code must be added - file->deny_write (bool) 
-
 	if(is_kernel_vaddr(buffer)){exit(-1);}
 	if((fd<0)||(fd>127)){ //not valid fd
 		exit(-1);
-		}
+}
 	lock_acquire(&read_write_lock);
 	int return_value=0;
 	if (fd == 1) { // write in console
@@ -227,10 +245,7 @@ write (int fd, const void *buffer, unsigned length){ // denying write code must 
 		}
 	else if (fd >=2) {
 		struct file * opened = thread_current()->fd_list[fd];
-		if(opened->deny_write){
-			lock_release(&read_write_lock);
-			return 0;   
-		}
+
 		return_value=(int) file_write(opened, buffer, (off_t) length);
 		lock_release(&read_write_lock);
 		return return_value;
@@ -263,8 +278,6 @@ close (int fd){
 	struct file * opened = thread_current()->fd_list[fd];
 	thread_current()->fd_list[fd] = NULL;
 	if (opened == NULL) {exit(-1);}
-
-	file_allow_write(opened);
 
 	file_close(opened);
 }
