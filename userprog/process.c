@@ -67,8 +67,7 @@ process_create_initd (const char *file_name) {
 	tid = thread_create (parser, PRI_DEFAULT, initd, fn_copy);
 
 	sema_down(&thread_current()->sema_load);
-
-
+	if (tid == TID_ERROR) {palloc_free_page(fn_copy);}
 	return tid;
 }
 
@@ -91,14 +90,18 @@ initd (void *f_name) {
 
 tid_t
 process_fork (const char *name, struct intr_frame *if_) {
-	struct thread *curr=thread_current();
-	memcpy(&(curr->tf_saver),if_,sizeof(struct intr_frame));
-	tid_t create_result= thread_create (name,PRI_DEFAULT, __do_fork, curr);
-	sema_down(&thread_current()->sema_wait);
-	if(running_thread()->tid==create_result){
-		return 0;
-	}
-	return create_result;
+   struct thread *curr=thread_current();
+   memcpy(&(curr->tf_saver),if_,sizeof(struct intr_frame));
+   tid_t create_result= thread_create (name,PRI_DEFAULT, __do_fork, curr);
+   sema_down(&thread_current()->sema_wait);
+   /*
+   if(running_thread()->tid==create_result){
+      return 0;
+   }*/
+   if (curr->tf_saver.R.rax==TID_ERROR){
+      return TID_ERROR;
+   }
+   return create_result;
 }
 
 
@@ -108,36 +111,41 @@ process_fork (const char *name, struct intr_frame *if_) {
  * pml4_for_each. This is only for the project 2. */
 static bool
 duplicate_pte (uint64_t *pte, void *va, void *aux) {
-	struct thread *current = thread_current ();
-	struct thread *parent = (struct thread *) aux;
-	void *parent_page;
-	void *newpage;
-	bool writable;
+   struct thread *current = thread_current ();
+   struct thread *parent = (struct thread *) aux;
+   void *parent_page;
+   void *newpage;
+   bool writable;
 
-	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
+   /* 1. TODO: If the parent_page is kernel page, then return immediately. */
 
-	if (is_kern_pte(pte)) {
-		return true;
-	}
+   if (is_kern_pte(pte)) {
+      return true;
+   }
 
-	/* 2. Resolve VA from the parent's page map level 4. */
-	parent_page = pml4_get_page (parent->pml4, va);
+   /* 2. Resolve VA from the parent's page map level 4. */
+   parent_page = pml4_get_page (parent->pml4, va);
 
-	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
-	 *    TODO: NEWPAGE. */
+   /* 3. TODO: Allocate new PAL_USER page for the child and set result to
+    *    TODO: NEWPAGE. */
 	newpage = palloc_get_page(0);
+	if(newpage==NULL){
+		palloc_free_page(newpage);
+		return false;
+	}
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
 	memcpy(newpage, parent_page, PGSIZE);
 	writable=is_writable(pte);
-	
+   
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+		palloc_free_page(newpage);
 		return false;
 	}
 	return true;
@@ -162,53 +170,54 @@ __do_fork (void *aux) {
 	bool succ = true;
 	/* 1. Read the cpu context to local stack. */
 	memcpy (if_, parent_if, sizeof (struct intr_frame));
-
-	/* 2. Duplicate PT */
+	 /* 2. Duplicate PT */
 	current->pml4 = pml4_create();
 	if (current->pml4 == NULL){
-		current->tid = TID_ERROR;
+		//current->tid = TID_ERROR;
 		goto error;
 	}
 	process_activate (current);
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt)){
-		current->tid = TID_ERROR; // when fork fails to duplicate content, it must return TID_ERROR
+		//current->tid = TID_ERROR; // when fork fails to duplicate content, it must return TID_ERROR
 		goto error;
-}
+	}
 #else
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)){
-		current->tid = TID_ERROR;
+		//current->tid = TID_ERROR;
 		goto error;
 	}
 #endif
 
 
-	/* TODO: Your code goes here.
-	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
-	 * TODO:       in include/filesys/file.h. Note that parent should not return
-	 * TODO:       from the fork() until this function successfully duplicates
-	 * TODO:       the resources of parent.*/
-	int i = 0;
-	while (i<128) {
-		struct file * temp_f_ptr = parent->fd_list[i];
-		if (temp_f_ptr != NULL) {
-			current->fd_list[i] = file_duplicate(temp_f_ptr);
-		}
-		i +=1;
-	}
-	current->fd_num = parent->fd_num;
+   /* TODO: Your code goes here.
+    * TODO: Hint) To duplicate the file object, use `file_duplicate`
+    * TODO:       in include/filesys/file.h. Note that parent should not return
+    * TODO:       from the fork() until this function successfully duplicates
+    * TODO:       the resources of parent.*/
+   int i = 0;
+   while (i<128) {
+      struct file * temp_f_ptr = parent->fd_list[i];
+      if (temp_f_ptr != NULL) {
+         current->fd_list[i] = file_duplicate(temp_f_ptr);
+      }
+      i +=1;
+   }
+   current->fd_num = parent->fd_num;
 
-	process_init ();
-	/* Finally, switch to the newly created process. */
-	if_->R.rax=0;
-	sema_up(&parent->sema_wait);
-	if (succ){
-		do_iret (if_);
-		}
-	NOT_REACHED();
+   process_init ();
+   /* Finally, switch to the newly created process. */
+   if_->R.rax=0;
+   sema_up(&parent->sema_wait);
+   if (succ){
+      do_iret (if_);
+      }
+   NOT_REACHED();
 error:
-	exit(-1);
+	parent->tf_saver.R.rax=TID_ERROR;
+	sema_up(&parent->sema_wait);
+	return -1;
 }
 
 /* Switch the current execution context to the f_name.

@@ -24,11 +24,14 @@ enum thread_status {
 typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
+#define THREAD_MAGIC 0xcd6abf4b
+
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 #define running_thread() ((struct thread *) (pg_round_down (rrsp ())))
+#define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
 /* A kernel thread or user process.
  *

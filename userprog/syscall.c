@@ -122,6 +122,10 @@ exit(int status) {
 			thread_current()->fd_list[i] = NULL;
 		}
 	}
+	while (!list_empty(&thread_current()->child)) {
+		struct thread * t = list_entry(list_begin(&thread_current()->child),struct thread,child_elem);
+		wait(t->tid);
+	}
 	thread_exit();
 }
 
@@ -235,12 +239,14 @@ write (int fd, const void *buffer, unsigned length){ // denying write code must 
 	if((fd<0)||(fd>127)){ //not valid fd
 		exit(-1);
 }
+	enum intr_level old_level = intr_enable();
 	lock_acquire(&read_write_lock);
 	int return_value=0;
 	if (fd == 1) { // write in console
 		putbuf(buffer, length);
 		return_value=length;
 		lock_release(&read_write_lock);
+		intr_set_level(old_level);
 		return return_value;
 		}
 	else if (fd >=2) {
@@ -248,9 +254,11 @@ write (int fd, const void *buffer, unsigned length){ // denying write code must 
 
 		return_value=(int) file_write(opened, buffer, (off_t) length);
 		lock_release(&read_write_lock);
+		intr_set_level(old_level);
 		return return_value;
 	}
 	lock_release(&read_write_lock);
+	intr_set_level(old_level);
 	return return_value;
 }
 

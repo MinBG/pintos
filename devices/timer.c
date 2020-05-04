@@ -8,6 +8,8 @@
 #include "threads/io.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "intrinsic.h"
+
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -123,20 +125,23 @@ timer_print_stats (void) {
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
+	enum intr_level old_level;
 	ticks++;
 	get_up(ticks);
-	thread_tick ();
-	if(thread_mlfqs){
-		update_incr();
-   		if (ticks % 4 == 0){
-      			update_priority(thread_current());
-   		}
-    		if (ticks % 100 == 0){
-     			update_all();
-   		}
-		
-		
+	old_level = intr_disable();
+	if (running_thread()->magic == THREAD_MAGIC) {
+		thread_tick ();
+		if (thread_mlfqs){
+			update_incr();
+			if (ticks % 4 == 0){
+     				update_priority(thread_current());
+  				}
+    			if (ticks % 100 == 0){
+     				update_all();
+   			}
+		}
 	}
+	intr_set_level(old_level);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
