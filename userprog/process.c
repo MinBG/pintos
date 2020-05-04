@@ -271,6 +271,8 @@ int process_wait (tid_t child_tid) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	enum intr_level old_level;
+	old_level = intr_disable();
 	struct list_elem *e=list_begin(&(thread_current()->child));
 	int found_child=0;
 	struct thread *thread_pointer;
@@ -287,8 +289,10 @@ int process_wait (tid_t child_tid) {
 		list_remove(&(thread_pointer->child_elem));
 		int ret_value=thread_pointer->exit_status;
 		sema_up(&thread_pointer->wait_to_die);
+		intr_set_level(old_level);
 		return ret_value;
 	}
+	intr_set_level(old_level);
 	return -1;
 }
 

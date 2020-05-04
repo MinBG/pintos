@@ -114,6 +114,8 @@ halt(void) {
 
 void
 exit(int status) {
+	enum intr_level old_level;
+	old_level = intr_disable();
 	thread_current()->exit_status=status;
 	printf("%s: exit(%d)\n", thread_current()->name,status);
 	for (int i = 2;i<128;i++) {
@@ -126,6 +128,7 @@ exit(int status) {
 		struct thread * t = list_entry(list_begin(&thread_current()->child),struct thread,child_elem);
 		wait(t->tid);
 	}
+	intr_set_level(old_level);
 	thread_exit();
 }
 
@@ -139,11 +142,14 @@ fork (char *thread_name){
 
 int
 exec (char *file){
+	enum intr_level old_level;
 	if(is_kernel_vaddr(file)){exit(-1);}
+	old_level = intr_disable();
 	int str_length=strlen(file);
 	char file_name[str_length+1];
 	strlcpy(file_name,file,str_length+1);
 	bool success = load (file_name, &thread_current()->tf);
+	intr_set_level(old_level);
 	if(!success){
 		return -1;
 	}
