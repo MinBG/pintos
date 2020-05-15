@@ -149,7 +149,9 @@ page_fault (struct intr_frame *f) {
 	/* Count page faults. */
 	page_fault_cnt++;
 //	printf("error on page fault\n");
-	exit(-1);
+	if(!user||is_kernel_vaddr(fault_addr)||not_present){
+		exit(-1);
+	}
 	/* If the fault is true fault, show info and exit. */
 	printf ("Page fault at %p: %s error %s page in %s context.\n",
 			fault_addr,
@@ -158,4 +160,5 @@ page_fault (struct intr_frame *f) {
 			user ? "user" : "kernel");
 	kill (f);
 }
+
 
