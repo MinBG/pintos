@@ -56,7 +56,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
-
+	printf("start\n");
 	/* Check whether the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
@@ -67,7 +67,6 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		struct page* page=(struct page*)malloc(sizeof(struct page));
 
 		/*using vm_type enum defined in vm.h will make things easier*/
-	
 		
 		/*using vm_type enum defined in vm.h will make things easier*/
 		/*fetch the initializer according to the vm type =>mentioned at TODO above*/
@@ -82,7 +81,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 				initializer=&file_map_initializer;
 				break;
 
-#ifdef EFILESYS
+#ifdef EFILESYS  /*For project 4 */
 			case VM_PAGE_CACHE:/* this is for project 4. I think not need to be implemented  */
 				
 				break;
@@ -102,8 +101,8 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 		//}
 
-
-		spt_insert_page(spt, upage); /*here, page means struct page*/
+		spt_insert_page(spt, page); /*here, page means struct page*/
+		return true;
 
 	}
 
@@ -116,16 +115,15 @@ struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
-	printf("a000\n");
+	if (va != NULL) {
+	printf("a000\n");} else {printf("a001\n");}
 	struct page *temp_page_pointer=NULL;
 	struct list *temp_list = &spt->spt_list;
 	if (!list_empty(temp_list)) {
-		printf("a001\n");
 		for (struct list_elem * i = list_begin(&spt->spt_list); i != list_end(&spt->spt_list); i = i->next) {
 			temp_page_pointer=( (struct supplemental_page_table_elem*)list_entry( i ,struct supplemental_page_table_elem ,spt_elem))->page;
 			if(temp_page_pointer->va==va){
 				page=temp_page_pointer;
-				printf("a002\n");
 				break;
 			}
 		}
@@ -139,18 +137,18 @@ bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
+
 	/* TODO: Fill this function. */	
 	/*document says this function should check that virtual address does not exist in spt */
-	printf("a00j\n");
-	if (page != NULL) {
-		printf("wtf\n");
-		if (page->va != NULL) {printf("wtf2\n");} else {printf("hey\n");}
-	}
+
+	if (page == NULL) {printf("b001\n");} else {
+		printf("b002\n");
+		if (page->va == NULL) {printf("b003\n");} else {printf("b004\n");}}
 
 	if (spt_find_page(spt, page->va)!=NULL){
 		return succ;
 	}
-	printf("a03\n");
+
 	struct supplemental_page_table_elem *spt_elem_insert = (struct supplemental_page_table_elem *) malloc(sizeof(struct supplemental_page_table_elem)); // create spt_elem structure
 
 	spt_elem_insert->page = page; // spt_elem->page should be given page through argument
