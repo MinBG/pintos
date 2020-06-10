@@ -3,6 +3,14 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "threads/interrupt.h"
+
+void frame_table_init (void){
+
+	list_init(&frame_table);
+	lock_init(&ft_lock);
+}
+
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -44,19 +52,61 @@ static struct frame *vm_evict_frame (void);
 bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
-
+	
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
-	/* Check wheter the upage is already occupied or not. */
+	/* Check whether the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
 
 		/* TODO: Insert the page into the spt. */
+		struct page* page=(struct page*)malloc(sizeof(struct page));
+
+		/*using vm_type enum defined in vm.h will make things easier*/
+	
+		
+		/*using vm_type enum defined in vm.h will make things easier*/
+		/*fetch the initializer according to the vm type =>mentioned at TODO above*/
+
+		bool * initializer=NULL;
+		switch(type){
+			case VM_ANON:
+				initializer=&anon_initializer;
+				break;
+
+			case VM_FILE:
+				initializer=&file_map_initializer;
+				break;
+
+#ifdef EFILESYS
+			case VM_PAGE_CACHE:/* this is for project 4. I think not need to be implemented  */
+				
+				break;
+#endif
+		}
+		uninit_new(page,upage,init,type,aux,initializer); /*here, page means struct page*/
+
+		/*  TODO: You should modify the field after calling the uninit_new. */
+		//switch(type){
+		//	case VM_ANON:
+		//		page->operations= &anon_ops;
+		//		break;
+
+		//	case VM_FILE:
+		//		page->operations = &file_ops;
+		//		break;
+
+		//}
+
+
+		spt_insert_page(spt, upage); /*here, page means struct page*/
+
 	}
+
 err:
 	return false;
 }
@@ -66,7 +116,21 @@ struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
-
+	printf("a000\n");
+	struct page *temp_page_pointer=NULL;
+	struct list *temp_list = &spt->spt_list;
+	if (!list_empty(temp_list)) {
+		printf("a001\n");
+		for (struct list_elem * i = list_begin(&spt->spt_list); i != list_end(&spt->spt_list); i = i->next) {
+			temp_page_pointer=( (struct supplemental_page_table_elem*)list_entry( i ,struct supplemental_page_table_elem ,spt_elem))->page;
+			if(temp_page_pointer->va==va){
+				page=temp_page_pointer;
+				printf("a002\n");
+				break;
+			}
+		}
+	}
+	printf("a003\n");
 	return page;
 }
 
@@ -75,7 +139,26 @@ bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
-	/* TODO: Fill this function. */
+	/* TODO: Fill this function. */	
+	/*document says this function should check that virtual address does not exist in spt */
+	printf("a00j\n");
+	if (page != NULL) {
+		printf("wtf\n");
+		if (page->va != NULL) {printf("wtf2\n");} else {printf("hey\n");}
+	}
+
+	if (spt_find_page(spt, page->va)!=NULL){
+		return succ;
+	}
+	printf("a03\n");
+	struct supplemental_page_table_elem *spt_elem_insert = (struct supplemental_page_table_elem *) malloc(sizeof(struct supplemental_page_table_elem)); // create spt_elem structure
+
+	spt_elem_insert->page = page; // spt_elem->page should be given page through argument
+
+	list_push_front (&spt->spt_list,  &spt_elem_insert->spt_elem); //push to list
+	if (spt_find_page(spt, page->va)!=NULL){
+		succ = true;
+	}
 
 	return succ;
 }
@@ -113,6 +196,30 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	enum intr_level old_level;
+	void *page = palloc_get_page(PAL_USER);
+	if (page == NULL) { //page allocation failure - marked for after
+		/*todo: must handle swap out( later )*/
+		PANIC("todo-vm_get_frame_function");
+	} else {
+		frame = (struct frame *)malloc(sizeof(struct frame));
+	}
+	
+	/*todo: allocates a frame. initialize its members and returns it*/
+	if (frame == NULL) {
+		return NULL;
+	}
+	
+	old_level = intr_disable();
+	if (!lock_held_by_current_thread(&ft_lock)) {
+		lock_acquire(&ft_lock);
+	}
+	list_push_back(&frame_table, &frame->ft_elem);  /*add frame to frame table.*/
+	lock_release(&ft_lock);
+	intr_set_level(old_level);
+	/* code flow :vm_claim_page->vm_do_claim_page->vm_get_frame  */
+	frame->owner_thread=thread_current();
+	frame->kva=  page;
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -154,6 +261,7 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
+	page = spt_find_page(&(thread_current()->spt),va);
 
 	return vm_do_claim_page (page);
 }
@@ -168,13 +276,18 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	uint64_t *pml4=thread_current()->pml4;
+	//pml4_set_page(pml4, page, frame->kva); -> do this at swap_in
 
+	/*return value should indicate whether the operation was successful of not*/
 	return swap_in (page, frame->kva);
 }
 
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	list_init(&spt->spt_list); //initialize spt_list
+	spt->owner_thread = thread_current(); //denote which thread owns this spt 
 }
 
 /* Copy supplemental page table from src to dst */
