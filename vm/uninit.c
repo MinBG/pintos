@@ -64,4 +64,12 @@ uninit_destroy (struct page *page) {
 	struct uninit_page *uninit UNUSED = &page->uninit;
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
+	//printf("uninit destroy\n");
+	page->operations=NULL;
+	page->va=NULL;
+	if(page->frame!=NULL){
+		page->frame->page=NULL;
+		page->frame->owner_thread=NULL;
+		free(page->frame);
+	}
 }

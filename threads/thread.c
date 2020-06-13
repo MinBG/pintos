@@ -17,6 +17,9 @@
 #include "userprog/process.h"
 #endif
 #include "threads/converter.h"
+#ifdef VM
+#include "vm/vm.h"
+#endif
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -114,6 +117,10 @@ thread_init (void) {
 		.address = (uint64_t) gdt
 	};
 	lgdt (&gdt_ds);
+
+#ifdef VM
+	frame_table_init();
+#endif
 
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
@@ -218,7 +225,10 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
-	
+
+#ifdef VM
+	supplemental_page_table_init(&t->spt);
+#endif	
 	/* Add to run queue. */
 	thread_unblock (t);
 	thread_preemption_func();

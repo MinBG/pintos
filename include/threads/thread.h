@@ -112,6 +112,7 @@ struct thread {
 	struct thread *parent;
 	struct list child;
 	struct list_elem child_elem;
+	uintptr_t rsp_saver;
 
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */

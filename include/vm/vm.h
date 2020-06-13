@@ -2,6 +2,8 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include <list.h>
+#include <string.h>
 
 enum vm_type {
 	/* page not initialized */
@@ -43,6 +45,9 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	bool writable;
+	bool is_stack;
+	struct supplemental_page_table_elem * spt_elem; //to connect to spt for easier searching
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -60,6 +65,9 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+	struct thread * owner_thread;
+	struct list_elem ft_elem;
+
 };
 
 /* The function table for page operations.
@@ -82,6 +90,33 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct thread * owner_thread; //this spt is owned by this thread
+	struct list spt_list; //to manage spt_elems
+};
+
+struct supplemental_page_table_elem {
+
+	struct page *page; //used to find the page
+	struct list_elem spt_elem; // to add element in spt
+
+};
+
+struct struct_aux{
+	struct file *file;
+	off_t read_byte;
+	off_t pos;
+};
+
+struct lock ft_lock;
+struct list frame_table;
+void frame_table_init(void); /*frame table*/
+
+struct lock spt_lock;
+
+struct swap_table{
+	int sector_max; //for anon
+	int *sector_table; //for anon
+	struct list swap_list;
 };
 
 #include "threads/thread.h"

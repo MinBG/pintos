@@ -57,6 +57,7 @@ void
 syscall_handler (struct intr_frame *f UNUSED) { 
 	// TODO: Your implementation goes here.
 	//printf ("system call!\n");
+	thread_current()->rsp_saver=f->rsp;
 	switch(f->R.rax){
 		case SYS_HALT: 
 			halt();
@@ -214,7 +215,7 @@ read (int fd, void *buffer, unsigned length){
 	if(is_kernel_vaddr(buffer)){exit(-1);}
 	if((fd<0)||(fd>127)){ //not valid fd
 		exit(-1);
-}
+	}
 	old_level = intr_enable();
 	lock_acquire(&read_write_lock);
 	int return_value=0;
@@ -233,7 +234,7 @@ read (int fd, void *buffer, unsigned length){
 
 //	file_deny_write(opened);
 
-	return_value=(int) file_read(opened, buffer	, (off_t) length);
+	return_value=(int) file_read(opened, buffer, (off_t) length);
 	lock_release(&read_write_lock);
 	intr_set_level(old_level);
 	return return_value;

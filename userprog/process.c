@@ -443,12 +443,9 @@ load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());
 
 	/* Open executable file. */
-	//file = filesys_open (file_name);
 	old_level = intr_enable();
 	file = filesys_open (parser);
-	//intr_set_level(old_level);
 	if (file == NULL) {
-		//printf ("load: %s: open failed\n", file_name);
 		printf ("load: %s: open failed\n", parser);
 		goto done;
 	}
@@ -461,7 +458,6 @@ load (const char *file_name, struct intr_frame *if_) {
 			|| ehdr.e_version != 1
 			|| ehdr.e_phentsize != sizeof (struct Phdr)
 			|| ehdr.e_phnum > 1024) {
-		//printf ("load: %s: error loading executable\n", file_name);
 		printf ("load: %s: error loading executable\n", parser);
 		goto done;
 	}
@@ -509,9 +505,11 @@ load (const char *file_name, struct intr_frame *if_) {
 						read_bytes = 0;
 						zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
 					}
-					if (!load_segment (file, file_page, (void *) mem_page,
-								read_bytes, zero_bytes, writable))
+					//printf("\nload segment will be ordered\n");
+					if (!load_segment (file, file_page, (void *) mem_page, read_bytes, zero_bytes, writable)){
+						//printf("\nload segment failed\n");
 						goto done;
+					}
 				}
 				else
 					goto done;
@@ -520,8 +518,10 @@ load (const char *file_name, struct intr_frame *if_) {
 	}
 
 	/* Set up stack. */
-	if (!setup_stack (if_))
+	if (!setup_stack (if_)){
+		printf("\nsetup stack returned false\n");
 		goto done;
+	}
 
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
@@ -673,7 +673,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 			palloc_free_page (kpage);
 			return false;
 		}
-		memset (kpage + page_read_bytes, 0, page_zero_bytes);
+			
 
 		/* Add the page to the process's address space. */
 		if (!install_page (upage, kpage, writable)) {
@@ -721,8 +721,7 @@ install_page (void *upage, void *kpage, bool writable) {
 
 	/* Verify that there's not already a page at that virtual
 	 * address, then map our page there. */
-	return (pml4_get_page (t->pml4, upage) == NULL
-			&& pml4_set_page (t->pml4, upage, kpage, writable));
+	return (pml4_get_page (t->pml4, upage) == NULL && pml4_set_page (t->pml4, upage, kpage, writable));
 }
 #else
 /* From here, codes will be used after project 3.
@@ -731,9 +730,23 @@ install_page (void *upage, void *kpage, bool writable) {
 
 static bool
 lazy_load_segment (struct page *page, void *aux) {
+	//printf("\nlazy load segment function entered\n");
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	//printf("lazy load\n");
+	struct file *file=((struct struct_aux*)aux)->file;
+	off_t read_bytes=((struct struct_aux*)aux)->read_byte;
+	off_t pos=((struct struct_aux*)aux)->pos;
+	off_t bytes_read;
+	bytes_read=file_read_at(file, page->frame->kva,read_bytes,pos);
+	if(read_bytes!= bytes_read){
+		//printf("read bytes not matching\n");
+		return false;} //just for checking
+	memset ((uint8_t *)(page->frame->kva+bytes_read), 0, PGSIZE-bytes_read);
+	file_close(file);
+	free(aux);
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -753,6 +766,7 @@ lazy_load_segment (struct page *page, void *aux) {
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
+	//printf("\n load segment function entered\n");
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (upage) == 0);
 	ASSERT (ofs % PGSIZE == 0);
@@ -765,15 +779,22 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
+		struct struct_aux *aux_info=(struct struct_aux*)malloc(sizeof(struct struct_aux));
+		aux_info->file=file_duplicate(file);
+		aux_info->read_byte=page_read_bytes;
+		aux_info->pos=ofs;	
+
+ 		/* TODO: Load the segment from the file */
+		if (!vm_alloc_page_with_initializer (VM_ANON, upage, writable, lazy_load_segment, aux_info)){
+			//printf("returned false\n");
 			return false;
+		}
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += PGSIZE;
 	}
 	return true;
 }
@@ -781,6 +802,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 static bool
 setup_stack (struct intr_frame *if_) {
+	//printf("\nsetup stack function entered\n");
 	bool success = false;
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 
@@ -788,8 +810,16 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
-
+	//printf("setup stack\n");
+	if( !vm_alloc_page_with_initializer(VM_ANON,stack_bottom,true,&vm_anon_init,NULL)){return false;}
+	if(!vm_claim_page(stack_bottom)){return false;}
+	struct page*stack_page=spt_find_page(&(thread_current()->spt), stack_bottom);
+	if(stack_page==NULL){return false;}
+	stack_page->is_stack=true;
+	if_->rsp = USER_STACK;
+	success=true;
 	return success;
 }
 #endif /* VM */
+
 

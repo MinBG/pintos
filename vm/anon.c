@@ -51,5 +51,18 @@ anon_swap_out (struct page *page) {
 /* Destroy the anonymous page. PAGE will be freed by the caller. */
 static void
 anon_destroy (struct page *page) {
+	//printf("anon destroy\n");
 	struct anon_page *anon_page = &page->anon;
+	page->operations=NULL;
+	page->va=NULL;
+	if(page->frame!=NULL){
+		page->frame->page=NULL;
+		page->frame->owner_thread=NULL;
+		free(page->frame);
+	}
+	/*
+	<free process required if some parts of struct anon_page are created using memory allocation>
+
+
+	*/
 }

@@ -87,8 +87,9 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 #endif
 		}
 		uninit_new(page,pg_round_down(upage),init,type,aux,initializer); /*here, page means struct page*/
-
-
+		
+		page->writable=writable;
+		page->is_stack=false;
 		spt_insert_page(spt, page); /*here, page means struct page*/
 		//bool succ = vm_do_claim_page(page);
 		//if(succ){printf("alloc with initializer function - do claim page success \n");}
@@ -219,6 +220,11 @@ vm_get_frame (void) {
 static void
 vm_stack_growth (void *addr UNUSED) {
 
+	if( !vm_alloc_page_with_initializer(VM_ANON,pg_round_down(addr),true,&vm_anon_init,NULL)){return false;}
+	if(!vm_claim_page(pg_round_down(addr))){return false;}
+	struct page*stack_page=spt_find_page(&(thread_current()->spt), pg_round_down(addr));
+	if(stack_page==NULL){return false;}
+	stack_page->is_stack=true;
 
 }
 
@@ -238,6 +244,18 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	//if(page==NULL){printf("page not found\n");}
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	uintptr_t rsp;
+	if (page==NULL){
+		if(user){rsp=f->rsp;
+		}else{rsp=thread_current()->rsp_saver;}
+		if(USER_STACK-(uint32_t)pg_round_down(addr)<=0x100000 && (uint32_t*)addr>=(rsp-64)){
+			vm_stack_growth(addr);
+
+			return true;
+		}else{
+			return false;
+		}
+	}
 
 	return vm_do_claim_page (page);
 }
@@ -256,12 +274,12 @@ vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
 	page = spt_find_page(&(thread_current()->spt),va);
-	if(page==NULL){
+	/*if(page==NULL){
 		struct page* new_page=(struct page*)malloc(sizeof(struct page));
 		new_page->va=pg_round_down(va);
 		if(!spt_insert_page(&(thread_current()->spt),new_page)){return false;}
 		page=new_page;
-	}
+	}*/
 
 	return vm_do_claim_page (page);
 }
@@ -279,7 +297,7 @@ vm_do_claim_page (struct page *page) {
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 	//printf("pml4 set page func\n");	
 	uint64_t *pml4=thread_current()->pml4;
-	pml4_set_page(pml4, page->va, frame->kva); //-> do this at swap_in
+	pml4_set_page(pml4, pg_round_down(page->va), frame->kva,page->writable); //-> do this at swap_in
 	//printf("pml4 set page func finished\n");
 
 	/*return value should indicate whether the operation was successful of not*/
@@ -292,22 +310,69 @@ void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 	list_init(&spt->spt_list); //initialize spt_list
 	spt->owner_thread = thread_current(); //denote which thread owns this spt 
+	lock_init(&spt_lock);
 }
 
 /* Copy supplemental page table from src to dst */
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
-
-
+ struct supplemental_page_table *src UNUSED) {
+	//printf("copy\n");
+	struct list * src_list = &src->spt_list;
+	struct list * dst_list = &dst->spt_list;
+	for (struct list_elem *i = list_begin(src_list); i != list_end(src_list); i = i->next) {
+		struct page* temp_page=( (struct supplemental_page_table_elem*)list_entry( i ,struct supplemental_page_table_elem ,spt_elem))->page;
+		
+		struct struct_aux * aux_info=NULL; 
+		bool * initializer;
+		struct vm_initializer * init = NULL;
+		if (temp_page->operations->type == VM_UNINIT) {
+			if (temp_page->uninit.aux != NULL) {
+				struct struct_aux * aux = temp_page->uninit.aux;
+				aux_info=(struct struct_aux*)malloc(sizeof(struct struct_aux));
+				aux_info->file=file_duplicate(aux->file);
+				aux_info->read_byte=aux->read_byte;
+				aux_info->pos=aux->pos;
+			}
+			if (temp_page->uninit.init != NULL) {
+				init = temp_page->uninit.init;
+			}
+		}
+		if (!vm_alloc_page_with_initializer(page_get_type(temp_page), temp_page->va, temp_page->writable, init,aux_info)){return false;}
+		struct page *npage = spt_find_page(dst,temp_page->va);
+		if (npage==NULL) {return false;}
+		npage->writable=temp_page->writable;
+		npage->is_stack=temp_page->is_stack;
+		if (!vm_do_claim_page(npage)) {return false;}
+		if (temp_page->frame != NULL) {
+			memcpy(npage->frame->kva, temp_page->frame->kva, PGSIZE);
+		}
+	}
+	return true;
 }
+
+
 
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	//printf("supplemental page table kill\n");
+	struct list * src_list = &spt->spt_list;
+	//if(list_empty(src_list)){printf("list is empty\n");}
+	while (list_size(src_list) != 0) {
+		//printf("testing: %d\n",(int)list_size(src_list));
+		struct list_elem *i = list_pop_front(src_list);
+		struct supplemental_page_table_elem * temp_spt_elem = (struct supplemental_page_table_elem*) list_entry( i ,struct supplemental_page_table_elem ,spt_elem);
+		struct page *temp_page= temp_spt_elem->page;
+
+		//* TODO: writeback all the modified contents to the storage. *
 
 
+		vm_dealloc_page(temp_page);
+		temp_spt_elem->page=NULL;
+		free(temp_spt_elem);
+	}
 }
 
