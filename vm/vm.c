@@ -8,8 +8,10 @@
 
 void frame_table_init (void){
 
-	list_init(&frame_table);
-	lock_init(&ft_lock);
+	if(!frame_table_initialized){
+		list_init(&frame_table);
+		lock_init(&ft_lock);
+	}
 }
 
 
@@ -98,7 +100,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	}	
 err:
-	//printf("not null page\n");
+	//printf("null page\n");
 	//printf("alloc page with initializer function finished\n");
 	return false;
 }
@@ -368,11 +370,13 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 		struct page *temp_page= temp_spt_elem->page;
 
 		//* TODO: writeback all the modified contents to the storage. *
-
+		
 
 		vm_dealloc_page(temp_page);
 		temp_spt_elem->page=NULL;
+		list_remove(&(temp_spt_elem->spt_elem));
 		free(temp_spt_elem);
 	}
+	//printf("all deleted?:%d\n",list_size(src_list));
 }
 

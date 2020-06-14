@@ -113,11 +113,22 @@ void frame_table_init(void); /*frame table*/
 
 struct lock spt_lock;
 
+
 struct swap_table{
-	int sector_max; //for anon
-	int *sector_table; //for anon
-	struct list swap_list;
+	uint32_t sector_max; //for anon
+	bool *sector_available; //for anon
+	struct list swap_table_list;
 };
+struct swap_table swap_table;
+static bool is_swap_table_list_initialized=false;
+struct swap_table_elem{
+	uint32_t sector_place[8];
+	void *va; //used for saving page->va
+	struct list_elem swap_table_elem;
+};
+
+static bool is_disk_set=false;
+static bool frame_table_initialized=false;
 
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);

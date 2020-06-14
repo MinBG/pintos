@@ -145,16 +145,11 @@ int
 exec (char *file){
 	enum intr_level old_level;
 	if(is_kernel_vaddr(file)){exit(-1);}
-	old_level = intr_disable();
 	int str_length=strlen(file);
 	char file_name[str_length+1];
 	strlcpy(file_name,file,str_length+1);
-	bool success = load (file_name, &thread_current()->tf);
-	intr_set_level(old_level);
-	if(!success){
-		return -1;
-	}
-	do_iret (&thread_current()->tf);
+	process_exec(file_name);
+	return -1;
 	NOT_REACHED ();
 }
 

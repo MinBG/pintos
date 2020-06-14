@@ -90,6 +90,7 @@ initd (void *f_name) {
 
 tid_t
 process_fork (const char *name, struct intr_frame *if_) {
+   //printf("fork start:%s\n",name);
    struct thread *curr=thread_current();
    memcpy(&(curr->tf_saver),if_,sizeof(struct intr_frame));
    tid_t create_result= thread_create (name,PRI_DEFAULT, __do_fork, curr);
@@ -98,9 +99,11 @@ process_fork (const char *name, struct intr_frame *if_) {
    if(running_thread()->tid==create_result){
       return 0;
    }*/
+   //printf("fork middle:%s\n",name);
    if (curr->tf_saver.R.rax==TID_ERROR){
       return TID_ERROR;
    }
+   //printf("fork done:%s\n",name);
    return create_result;
 }
 
@@ -158,7 +161,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  *       this function. */
 static void
 __do_fork (void *aux) {
-	//truct intr_frame if_;
+	//printf("do fork\n");
 	struct intr_frame *if_;
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
@@ -226,7 +229,7 @@ int
 process_exec (void *f_name) {
 	char *file_name = f_name;
 	bool success;
-
+	//printf("exec start\n");
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
 	 * it stores the execution information to the member. */
@@ -237,20 +240,15 @@ process_exec (void *f_name) {
 
 	/* We first kill the current context */
 	process_cleanup ();
-
 	/* And then load the binary */
 	success = load (file_name, &_if);
 	
 	/* If load failed, quit.__ */
-	palloc_free_page (file_name);
-
 	sema_up(&thread_current()->parent->sema_load);
-
 	if (!success){
 		return -1;
 	}
 	/* Start switched process. */
-
 	do_iret (&_if);
 	NOT_REACHED ();
 }
@@ -445,10 +443,9 @@ load (const char *file_name, struct intr_frame *if_) {
 	/* Open executable file. */
 	old_level = intr_enable();
 	file = filesys_open (parser);
-	if (file == NULL) {
-		printf ("load: %s: open failed\n", parser);
+	if (file == NULL)
 		goto done;
-	}
+
 
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -519,7 +516,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* Set up stack. */
 	if (!setup_stack (if_)){
-		printf("\nsetup stack returned false\n");
+		//printf("\nsetup stack returned false\n");
 		goto done;
 	}
 
@@ -795,6 +792,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
 		ofs += PGSIZE;
+		//printf("tot:%d\n",read_bytes);
 	}
 	return true;
 }

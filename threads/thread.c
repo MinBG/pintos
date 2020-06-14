@@ -120,6 +120,10 @@ thread_init (void) {
 
 #ifdef VM
 	frame_table_init();
+	if(!is_disk_set){
+		vm_anon_init();
+	}
+
 #endif
 
 	/* Init the globla thread context */

@@ -22,7 +22,20 @@ void
 vm_anon_init (void) {
 	/* TODO: Set up the swap_disk. */
 	//printf("vm_anon_init\n");
-	swap_disk = NULL;
+	/*if(!is_disk_set){
+		//disk_init();
+		swap_disk = disk_get(1,1);
+		disk_print_stats();
+		identify_data_device(swap_disk);
+		swap_table.sector_max=disk_size(swap_disk)/512-1;
+		swap_table.sector_available=(bool*)malloc(sizeof(bool)*disk_size(swap_disk)/512);
+		int i=0;
+		for(i=0;i<swap_table.sector_max+1;i++){
+			*(swap_table.sector_available+i)=true;
+		}
+		
+	}*/
+
 }
 
 /* Initialize the file mapping */
