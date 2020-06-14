@@ -102,6 +102,13 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_CLOSE: 
 			close((int)f->R.rdi);
 			break;
+		/* Project 3 and optionally project 4. */
+		case SYS_MMAP:
+			f->R.rax =(uint64_t)mmap((void *)f->R.rdi,(size_t)f->R.rsi,(int)f->R.rdx,(int)f->R.r10,(off_t)f->R.r8);
+			break;
+		case SYS_MUNMAP:
+			munmap((void *)f->R.rdi);
+			break;
 		default: 
 			exit(-1);
 	}
@@ -208,6 +215,7 @@ int
 read (int fd, void *buffer, unsigned length){
 	enum intr_level old_level;
 	if(is_kernel_vaddr(buffer)){exit(-1);}
+	if((spt_find_page(&(thread_current()->spt),buffer)->writable)==false){exit(-1);}
 	if((fd<0)||(fd>127)){ //not valid fd
 		exit(-1);
 	}
@@ -228,7 +236,6 @@ read (int fd, void *buffer, unsigned length){
 	struct file * opened = thread_current()->fd_list[fd];
 
 //	file_deny_write(opened);
-
 	return_value=(int) file_read(opened, buffer, (off_t) length);
 	lock_release(&read_write_lock);
 	intr_set_level(old_level);
@@ -237,7 +244,6 @@ read (int fd, void *buffer, unsigned length){
 
 int
 write (int fd, const void *buffer, unsigned length){ // denying write code must be added - file->deny_write (bool) 
-	if(is_kernel_vaddr(buffer)){exit(-1);}
 	if((fd<0)||(fd>127)){ //not valid fd
 		exit(-1);
 }
@@ -292,4 +298,21 @@ close (int fd){
 	file_close(opened);
 }
 
+
+/* Project 3 and optionally project 4. */
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
+	if(USER_STACK>addr || is_kernel_vaddr(addr)){return NULL;}
+	if (is_kernel_vaddr(addr+length)){return NULL;}
+	if (fd == 0 || fd == 1 || length == 0 || addr == 0 || addr == NULL) {return NULL;}
+	struct file * opened = thread_current()->fd_list[fd];
+	if (opened == NULL) {return NULL;}
+	if (offset > file_length(opened)) {return NULL;}
+	void * ret = do_mmap(addr, length, writable, opened, offset);
+	return ret;
+}
+
+void munmap (void *addr){
+	if(is_kernel_vaddr(addr)){exit(-1);}
+	do_munmap(addr);
+}
 

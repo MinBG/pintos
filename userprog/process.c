@@ -443,8 +443,9 @@ load (const char *file_name, struct intr_frame *if_) {
 	/* Open executable file. */
 	old_level = intr_enable();
 	file = filesys_open (parser);
-	if (file == NULL)
-		goto done;
+	if (file == NULL) {
+		printf ("load: %s: open failed\n", parser);
+		goto done;}
 
 
 	/* Read and verify executable header. */
@@ -725,7 +726,7 @@ install_page (void *upage, void *kpage, bool writable) {
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
-static bool
+bool
 lazy_load_segment (struct page *page, void *aux) {
 	//printf("\nlazy load segment function entered\n");
 	/* TODO: Load the segment from the file */
@@ -741,6 +742,12 @@ lazy_load_segment (struct page *page, void *aux) {
 		//printf("read bytes not matching\n");
 		return false;} //just for checking
 	memset ((uint8_t *)(page->frame->kva+bytes_read), 0, PGSIZE-bytes_read);
+	page->is_code=true;
+	if (page_get_type(page) == VM_FILE) {
+		page->file.file = file;
+		page->file.pos = pos;
+		page->file.zeronum = PGSIZE-bytes_read;
+	}
 	file_close(file);
 	free(aux);
 	return true;
@@ -814,6 +821,7 @@ setup_stack (struct intr_frame *if_) {
 	struct page*stack_page=spt_find_page(&(thread_current()->spt), stack_bottom);
 	if(stack_page==NULL){return false;}
 	stack_page->is_stack=true;
+	stack_page->is_code=false;
 	if_->rsp = USER_STACK;
 	success=true;
 	return success;

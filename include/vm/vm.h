@@ -4,6 +4,7 @@
 #include "threads/palloc.h"
 #include <list.h>
 #include <string.h>
+#include "threads/vaddr.h"
 
 enum vm_type {
 	/* page not initialized */
@@ -47,6 +48,9 @@ struct page {
 	/* Your implementation */
 	bool writable;
 	bool is_stack;
+	bool is_code;
+	int page_id;
+
 	struct supplemental_page_table_elem * spt_elem; //to connect to spt for easier searching
 
 	/* Per-type data are binded into the union.
@@ -120,15 +124,18 @@ struct swap_table{
 	struct list swap_table_list;
 };
 struct swap_table swap_table;
-static bool is_swap_table_list_initialized=false;
 struct swap_table_elem{
 	uint32_t sector_place[8];
 	void *va; //used for saving page->va
+	int page_id;
 	struct list_elem swap_table_elem;
 };
-
+static bool is_swap_table_list_initialized=false;
 static bool is_disk_set=false;
 static bool frame_table_initialized=false;
+static int page_id=0;
+
+static void * stack_btm=(void*)((uint8_t*)(USER_STACK-PGSIZE));
 
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);

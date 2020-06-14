@@ -92,6 +92,10 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		
 		page->writable=writable;
 		page->is_stack=false;
+		page->is_code=false;
+		page->page_id=page_id;
+		page_id++;
+
 		spt_insert_page(spt, page); /*here, page means struct page*/
 		//bool succ = vm_do_claim_page(page);
 		//if(succ){printf("alloc with initializer function - do claim page success \n");}
@@ -158,7 +162,6 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *page U
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	vm_dealloc_page (page);
-	return true;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -174,10 +177,16 @@ vm_get_victim (void) {
  * Return NULL on error.*/
 static struct frame *
 vm_evict_frame (void) {
-	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
+	struct frame *frame=vm_get_victim();
+	if(frame==NULL){return frame;}
+	/*spt table and struct page must not be destroyed. must be alive*/
+	swap_out(frame->page);
+	pml4_clear_page(frame->owner_thread->pml4,frame->page->va);
+	frame->owner_thread=thread_current();
+	frame->page=NULL;
+	return frame;
 
-	return NULL;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -192,7 +201,10 @@ vm_get_frame (void) {
 	void *page = palloc_get_page(PAL_USER);
 	if (page == NULL) { //page allocation failure - marked for after
 		/*todo: must handle swap out( later )*/
-		PANIC("todo-vm_get_frame_function");
+		//PANIC("todo-vm_get_frame_function");
+		frame=vm_evict_frame();
+		ASSERT (frame != NULL);
+		return frame;
 	} else {
 		frame = (struct frame *)malloc(sizeof(struct frame));
 	}
@@ -222,11 +234,21 @@ vm_get_frame (void) {
 static void
 vm_stack_growth (void *addr UNUSED) {
 
-	if( !vm_alloc_page_with_initializer(VM_ANON,pg_round_down(addr),true,&vm_anon_init,NULL)){return false;}
-	if(!vm_claim_page(pg_round_down(addr))){return false;}
-	struct page*stack_page=spt_find_page(&(thread_current()->spt), pg_round_down(addr));
-	if(stack_page==NULL){return false;}
-	stack_page->is_stack=true;
+	//printf("entered stack_growth\n");
+	void *target=pg_round_down(addr);
+	uint32_t diff=((uint32_t)stack_btm-(uint32_t)target)/PGSIZE;
+	//printf("allocate %d pages\n", diff);
+	while(stack_btm!=target){
+		//printf("yaho\n");
+		if( !vm_alloc_page_with_initializer(VM_ANON,pg_round_down(stack_btm-PGSIZE),true,NULL,NULL)){return false;}
+		if(!vm_claim_page(pg_round_down(stack_btm-PGSIZE))){return false;}
+		struct page*stack_page=spt_find_page(&(thread_current()->spt), pg_round_down(stack_btm-PGSIZE));
+		if(stack_page==NULL){return false;}
+		stack_page->is_stack=true;
+		stack_page->is_code=false;
+		stack_btm=stack_btm-PGSIZE;
+	}
+
 
 }
 
@@ -252,7 +274,8 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		}else{rsp=thread_current()->rsp_saver;}
 		if(USER_STACK-(uint32_t)pg_round_down(addr)<=0x100000 && (uint32_t*)addr>=(rsp-64)){
 			vm_stack_growth(addr);
-
+			struct page *npage = spt_find_page(spt,addr);
+			npage->writable = write;
 			return true;
 		}else{
 			return false;
@@ -345,6 +368,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		if (npage==NULL) {return false;}
 		npage->writable=temp_page->writable;
 		npage->is_stack=temp_page->is_stack;
+		npage->is_code=temp_page->is_code;
+		npage->page_id=page_id;
+		page_id++;
 		if (!vm_do_claim_page(npage)) {return false;}
 		if (temp_page->frame != NULL) {
 			memcpy(npage->frame->kva, temp_page->frame->kva, PGSIZE);
@@ -368,10 +394,6 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 		struct list_elem *i = list_pop_front(src_list);
 		struct supplemental_page_table_elem * temp_spt_elem = (struct supplemental_page_table_elem*) list_entry( i ,struct supplemental_page_table_elem ,spt_elem);
 		struct page *temp_page= temp_spt_elem->page;
-
-		//* TODO: writeback all the modified contents to the storage. *
-		
-
 		vm_dealloc_page(temp_page);
 		temp_spt_elem->page=NULL;
 		list_remove(&(temp_spt_elem->spt_elem));

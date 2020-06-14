@@ -123,7 +123,6 @@ thread_init (void) {
 	if(!is_disk_set){
 		vm_anon_init();
 	}
-
 #endif
 
 	/* Init the globla thread context */
