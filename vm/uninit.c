@@ -65,6 +65,14 @@ uninit_destroy (struct page *page) {
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
 	//printf("uninit destroy\n");
+	
+	if (uninit->aux != NULL) {
+		free(uninit->aux);
+		uninit->aux = NULL;
+	}
+	uninit->init = NULL;
+	//uninit->type = NULL;
+	uninit->page_initializer = NULL;
 	page->operations=NULL;
 	page->va=NULL;
 	if(page->frame!=NULL){

@@ -149,7 +149,7 @@ page_fault (struct intr_frame *f) {
 
 	/* Count page faults. */
 	page_fault_cnt++;
-//	printf("error on page fault\n");
+	//printf("error on page fault\n");
 	if(!user||is_kernel_vaddr(fault_addr)||not_present){
 		exit(-1);
 	}

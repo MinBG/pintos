@@ -33,6 +33,10 @@ static void __do_fork (void *);
 static void
 process_init (void) {
 	struct thread *current = thread_current ();
+	if (is_disk_set) {
+		vm_anon_init();
+		is_disk_set = false;
+	}
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
@@ -732,17 +736,20 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
-	//printf("lazy load\n");
+	//printf("lazy load 0\n");
 	struct file *file=((struct struct_aux*)aux)->file;
+	//printf("lazy load 1\n");
 	off_t read_bytes=((struct struct_aux*)aux)->read_byte;
+	//printf("lazy load 2\n");
 	off_t pos=((struct struct_aux*)aux)->pos;
+	//printf("lazy load 3\n");
 	off_t bytes_read;
 	bytes_read=file_read_at(file, page->frame->kva,read_bytes,pos);
+	//printf("lazy load 4\n");
 	if(read_bytes!= bytes_read){
 		//printf("read bytes not matching\n");
 		return false;} //just for checking
 	memset ((uint8_t *)(page->frame->kva+bytes_read), 0, PGSIZE-bytes_read);
-	page->is_code=true;
 	if (page_get_type(page) == VM_FILE) {
 		page->file.file = file;
 		page->file.pos = pos;
@@ -750,6 +757,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	}
 	file_close(file);
 	free(aux);
+	//printf("lazy done\n");
 	return true;
 }
 
@@ -821,7 +829,6 @@ setup_stack (struct intr_frame *if_) {
 	struct page*stack_page=spt_find_page(&(thread_current()->spt), stack_bottom);
 	if(stack_page==NULL){return false;}
 	stack_page->is_stack=true;
-	stack_page->is_code=false;
 	if_->rsp = USER_STACK;
 	success=true;
 	return success;

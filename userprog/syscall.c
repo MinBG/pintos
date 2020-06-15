@@ -301,17 +301,20 @@ close (int fd){
 
 /* Project 3 and optionally project 4. */
 void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
-	if(USER_STACK>addr || is_kernel_vaddr(addr)){return NULL;}
-	if (is_kernel_vaddr(addr+length)){return NULL;}
-	if (fd == 0 || fd == 1 || length == 0 || addr == 0 || addr == NULL) {return NULL;}
-	struct file * opened = thread_current()->fd_list[fd];
-	if (opened == NULL) {return NULL;}
-	if (offset > file_length(opened)) {return NULL;}
-	void * ret = do_mmap(addr, length, writable, opened, offset);
-	return ret;
+	if(0x1000< addr && addr < KERN_BASE){
+		if (0x1000< (addr+length) && (addr+length) < KERN_BASE){
+			if (fd == 0 || fd == 1 || length == 0 || addr == 0 || addr == NULL) {return NULL;}
+			struct file * opened = thread_current()->fd_list[fd];
+			if (opened == NULL) {return NULL;}
+			void * ret = do_mmap(addr, length, writable, opened, offset);
+			return ret;
+		}
+	}
+	return NULL;
 }
 
 void munmap (void *addr){
+	//printf("munmap\n");
 	if(is_kernel_vaddr(addr)){exit(-1);}
 	do_munmap(addr);
 }

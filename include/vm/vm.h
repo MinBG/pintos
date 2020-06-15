@@ -48,9 +48,8 @@ struct page {
 	/* Your implementation */
 	bool writable;
 	bool is_stack;
-	bool is_code;
 	int page_id;
-
+	int unaccessed_time;
 	struct supplemental_page_table_elem * spt_elem; //to connect to spt for easier searching
 
 	/* Per-type data are binded into the union.
@@ -71,7 +70,6 @@ struct frame {
 	struct page *page;
 	struct thread * owner_thread;
 	struct list_elem ft_elem;
-
 };
 
 /* The function table for page operations.
@@ -112,6 +110,7 @@ struct struct_aux{
 };
 
 struct lock ft_lock;
+struct lock swap_lock;
 struct list frame_table;
 void frame_table_init(void); /*frame table*/
 
