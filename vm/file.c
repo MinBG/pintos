@@ -28,6 +28,7 @@ file_map_initializer (struct page *page, enum vm_type type, void *kva) {
 	page->operations = &file_ops;
 	struct file_page *file_page = &page->file;
 	file_page->zeronum = 0;
+	//printf("init\n");
 	return true;
 }
 
@@ -95,6 +96,7 @@ do_mmap (void *addr, size_t length, int writable,
 	struct struct_aux * aux;
 	if ((size_t)addr % PGSIZE != 0|| offset % PGSIZE != 0) {return NULL;}
 	void * ret = addr;
+	length = length < (file_length(file)-offset) ? length : (file_length(file)-offset);
 	if (spt_find_page(&thread_current()->spt,addr) != NULL) {return NULL;}
 	while (length > 0){
 		aux = (struct struct_aux*)malloc(sizeof(struct struct_aux));
@@ -102,6 +104,7 @@ do_mmap (void *addr, size_t length, int writable,
 			aux->read_byte=PGSIZE;
 			length -=PGSIZE;
 		} else {
+			//printf("len %d\n",(int)length);
 			aux->read_byte=length;
 			length = 0;
 		}

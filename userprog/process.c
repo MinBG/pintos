@@ -745,7 +745,8 @@ lazy_load_segment (struct page *page, void *aux) {
 	//printf("lazy load 3\n");
 	off_t bytes_read;
 	bytes_read=file_read_at(file, page->frame->kva,read_bytes,pos);
-	//printf("lazy load 4\n");
+	//printf("lazy load 4, rb %d, br %d\n",(int)read_bytes, (int)bytes_read);
+	//printf("pos %d, len %d\n", (int)pos, (int)file_length(file));
 	if(read_bytes!= bytes_read){
 		//printf("read bytes not matching\n");
 		return false;} //just for checking
@@ -755,7 +756,7 @@ lazy_load_segment (struct page *page, void *aux) {
 		page->file.pos = pos;
 		page->file.zeronum = PGSIZE-bytes_read;
 	}
-	file_close(file);
+	//file_close(file);
 	free(aux);
 	//printf("lazy done\n");
 	return true;
