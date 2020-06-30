@@ -2,6 +2,7 @@
 #define USERPROG_SYSCALL_H
 #include "threads/thread.h"
 #include "threads/synch.h"
+#include "filesys/off_t.h"
 void syscall_init (void);
 void halt (void) NO_RETURN;
 void exit (int status) NO_RETURN;

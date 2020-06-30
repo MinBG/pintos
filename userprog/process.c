@@ -33,10 +33,12 @@ static void __do_fork (void *);
 static void
 process_init (void) {
 	struct thread *current = thread_current ();
+#ifdef VM
 	if (is_disk_set) {
 		vm_anon_init();
 		is_disk_set = false;
 	}
+#endif
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.

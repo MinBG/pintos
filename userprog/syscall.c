@@ -17,6 +17,7 @@
 #include "lib/string.h"
 #include "threads/synch.h"
 #include "threads/interrupt.h"
+#include "vm/file.h"
 
 struct lock read_write_lock;
 

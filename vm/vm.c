@@ -424,10 +424,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 }
 
 
-
 /* Free the resource hold by the supplemental page table */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
 	//printf("supplemental page table kill\n");
@@ -439,10 +438,6 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 		struct list_elem *i = list_pop_front(src_list);
 		struct supplemental_page_table_elem * temp_spt_elem = (struct supplemental_page_table_elem*) list_entry( i ,struct supplemental_page_table_elem ,spt_elem);
 		struct page *temp_page= temp_spt_elem->page;
-
-		/*if (temp_page->operations->type == VM_FILE) {
-			swap_out(temp_page);
-		}*/
 
 		vm_dealloc_page(temp_page);
 		temp_spt_elem->page=NULL;
