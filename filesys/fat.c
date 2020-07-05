@@ -87,6 +87,7 @@ fat_close (void) {
 	if (bounce == NULL)
 		PANIC ("FAT close failed");
 	memcpy (bounce, &fat_fs->bs, sizeof (fat_fs->bs));
+
 	disk_write (filesys_disk, FAT_BOOT_SECTOR, bounce);
 	free (bounce);
 
@@ -95,8 +96,10 @@ fat_close (void) {
 	off_t bytes_wrote = 0;
 	off_t bytes_left = sizeof (fat_fs->fat);
 	const off_t fat_size_in_bytes = fat_fs->fat_length * sizeof (cluster_t);
+
 	for (unsigned i = 0; i < fat_fs->bs.fat_sectors; i++) {
 		bytes_left = fat_size_in_bytes - bytes_wrote;
+
 		if (bytes_left >= DISK_SECTOR_SIZE) {
 			disk_write (filesys_disk, fat_fs->bs.fat_start + i,
 			            buffer + bytes_wrote);
@@ -153,6 +156,13 @@ fat_boot_create (void) {
 void
 fat_fs_init (void) {
 	/* TODO: Your code goes here. */
+	//printf("fat fs init\n");
+
+	fat_fs->fat_length = fat_fs->bs.total_sectors-1;
+	fat_fs->data_start =  fat_fs->bs.fat_start + (sizeof (cluster_t) * fat_fs->fat_length)/DISK_SECTOR_SIZE;
+	fat_fs->last_clst = 1;
+	
+	lock_init(&fat_fs->write_lock);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -165,6 +175,15 @@ fat_fs_init (void) {
 cluster_t
 fat_create_chain (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	cluster_t ret = 0;
+	if (clst == 0) { //start new chain
+		fat_put(fat_fs->last_clst+1,EOChain);	//add EOC
+	} else { // add a cluster to chain
+		fat_put(fat_fs->last_clst+1,clst);
+	}
+	fat_fs->last_clst = fat_fs->last_clst+1;
+	ret = fat_fs->last_clst;
+	return ret;
 }
 
 /* Remove the chain of clusters starting from CLST.
@@ -172,22 +191,47 @@ fat_create_chain (cluster_t clst) {
 void
 fat_remove_chain (cluster_t clst, cluster_t pclst) {
 	/* TODO: Your code goes here. */
+	//printf("fat remove chain\n");
+	if (pclst == 0) {
+		cluster_t next = fat_fs->fat[clst];
+		if (next != EOChain) { fat_remove_chain(next,0); }
+		fat_fs->fat[clst] = 0;
+	} else {
+		cluster_t next = fat_fs->fat[clst];
+		fat_fs->fat[clst] = EOChain;
+		fat_remove_chain(next,0);
+	}
 }
 
 /* Update a value in the FAT table. */
 void
 fat_put (cluster_t clst, cluster_t val) {
 	/* TODO: Your code goes here. */
+	//printf("fat put: %d -> %d\n",clst, val);
+	unsigned int *fat = fat_fs->fat;
+	fat[clst] = val;
 }
 
 /* Fetch a value in the FAT table. */
 cluster_t
 fat_get (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	unsigned int *fat = fat_fs->fat;
+	return fat[clst];
 }
 
 /* Covert a cluster # to a sector number. */
 disk_sector_t
 cluster_to_sector (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	disk_sector_t ret =  (fat_fs->bs.fat_sectors + (disk_sector_t)clst);
+	//printf("cluster to sector: %d -> %d\n", clst,ret);
+	return ret;
+}
+
+cluster_t
+sector_to_cluster (disk_sector_t sector) {
+	cluster_t ret =  (cluster_t)(sector - fat_fs->bs.fat_sectors );
+	//printf("sector to cluster: %d -> %d\n",sector, ret);
+	return ret;
 }

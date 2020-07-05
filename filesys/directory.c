@@ -23,7 +23,7 @@ struct dir_entry {
  * given SECTOR.  Returns true if successful, false on failure. */
 bool
 dir_create (disk_sector_t sector, size_t entry_cnt) {
-	return inode_create (sector, entry_cnt * sizeof (struct dir_entry));
+	return inode_create (sector, entry_cnt * sizeof (struct dir_entry),NULL);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -131,15 +131,12 @@ dir_add (struct dir *dir, const char *name, disk_sector_t inode_sector) {
 
 	ASSERT (dir != NULL);
 	ASSERT (name != NULL);
-
 	/* Check NAME for validity. */
-	if (*name == '\0' || strlen (name) > NAME_MAX)
+	if (*name == '\0')
 		return false;
-
 	/* Check that NAME is not in use. */
 	if (lookup (dir, name, NULL, NULL))
 		goto done;
-
 	/* Set OFS to offset of free slot.
 	 * If there are no free slots, then it will be set to the
 	 * current end-of-file.
@@ -151,13 +148,11 @@ dir_add (struct dir *dir, const char *name, disk_sector_t inode_sector) {
 			ofs += sizeof e)
 		if (!e.in_use)
 			break;
-
 	/* Write slot. */
 	e.in_use = true;
 	strlcpy (e.name, name, sizeof e.name);
 	e.inode_sector = inode_sector;
 	success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
-
 done:
 	return success;
 }
