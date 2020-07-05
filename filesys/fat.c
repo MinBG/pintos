@@ -159,9 +159,8 @@ fat_fs_init (void) {
 	//printf("fat fs init\n");
 
 	fat_fs->fat_length = fat_fs->bs.total_sectors-1;
-	fat_fs->data_start =  fat_fs->bs.fat_start + (sizeof (cluster_t) * fat_fs->fat_length)/DISK_SECTOR_SIZE;
+	fat_fs->data_start =  fat_fs->bs.fat_start + (sizeof (cluster_t) * fat_fs->fat_length)/DISK_SECTOR_SIZE +1;
 	fat_fs->last_clst = 1;
-	
 	lock_init(&fat_fs->write_lock);
 }
 
@@ -224,14 +223,14 @@ fat_get (cluster_t clst) {
 disk_sector_t
 cluster_to_sector (cluster_t clst) {
 	/* TODO: Your code goes here. */
-	disk_sector_t ret =  (fat_fs->bs.fat_sectors + (disk_sector_t)clst);
+	disk_sector_t ret =  (fat_fs->data_start + (disk_sector_t)clst);
 	//printf("cluster to sector: %d -> %d\n", clst,ret);
 	return ret;
 }
 
 cluster_t
 sector_to_cluster (disk_sector_t sector) {
-	cluster_t ret =  (cluster_t)(sector - fat_fs->bs.fat_sectors );
+	cluster_t ret =  (cluster_t)(sector - fat_fs->data_start);
 	//printf("sector to cluster: %d -> %d\n",sector, ret);
 	return ret;
 }
