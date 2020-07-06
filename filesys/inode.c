@@ -47,7 +47,7 @@ byte_to_sector (const struct inode *inode, off_t pos) {
 	ASSERT (inode != NULL);
 	if (pos > DISK_SECTOR_SIZE)
 		return byte_to_sector(fat_get(sector_to_cluster(inode->sector)),pos-DISK_SECTOR_SIZE);
-	else if (pos < inode->data.length)
+	else if (pos <= inode->data.length)
 		return inode->sector;
 	else
 		return -1;
@@ -87,7 +87,7 @@ inode_create (disk_sector_t sector, off_t length, disk_sector_t * ret) {
 		disk_inode->start = sector;
 		//if (free_map_allocate (sectors, &disk_inode->start)) {
 		cluster_t clst = sector_to_cluster(sector);
-		for (int i=0;i<sectors;i++) {
+		for (int i=0;i<sectors+1;i++) {
 			clst = fat_create_chain(clst);
 			if (clst==0) {success2 = false;}
 		}
@@ -145,7 +145,7 @@ inode_open (disk_sector_t sector) {
 	inode->deny_write_cnt = 0;
 	inode->removed = false;
 	disk_read (filesys_disk, inode->sector, &inode->data);
-	
+	printf("inode open, %d,%d,%d\n", inode->sector, inode->data.start,inode->data.length);
 	return inode;
 }
 

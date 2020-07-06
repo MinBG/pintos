@@ -65,6 +65,7 @@ fat_open (void) {
 	for (unsigned i = 0; i < fat_fs->bs.fat_sectors; i++) {
 		bytes_left = fat_size_in_bytes - bytes_read;
 		if (bytes_left >= DISK_SECTOR_SIZE) {
+//printf("open sector %d\n",fat_fs->bs.fat_start + i);
 			disk_read (filesys_disk, fat_fs->bs.fat_start + i,
 			           buffer + bytes_read);
 			bytes_read += DISK_SECTOR_SIZE;
@@ -73,6 +74,7 @@ fat_open (void) {
 			if (bounce == NULL)
 				PANIC ("FAT load failed");
 			disk_read (filesys_disk, fat_fs->bs.fat_start + i, bounce);
+//printf("open sector %d\n",fat_fs->bs.fat_start + i);
 			memcpy (buffer + bytes_read, bounce, bytes_left);
 			bytes_read += bytes_left;
 			free (bounce);
@@ -134,7 +136,8 @@ fat_create (void) {
 	uint8_t *buf = calloc (1, DISK_SECTOR_SIZE);
 	if (buf == NULL)
 		PANIC ("FAT create failed due to OOM");
-	disk_write (filesys_disk, cluster_to_sector (ROOT_DIR_CLUSTER), buf);
+	disk_write (filesys_disk, cluster_to_sector(ROOT_DIR_CLUSTER), buf);
+
 	free (buf);
 }
 
@@ -147,7 +150,7 @@ fat_boot_create (void) {
 	    .magic = FAT_MAGIC,
 	    .sectors_per_cluster = SECTORS_PER_CLUSTER,
 	    .total_sectors = disk_size (filesys_disk),
-	    .fat_start = 1,
+	    .fat_start = 2,
 	    .fat_sectors = fat_sectors,
 	    .root_dir_cluster = ROOT_DIR_CLUSTER,
 	};
@@ -158,8 +161,8 @@ fat_fs_init (void) {
 	/* TODO: Your code goes here. */
 	//printf("fat fs init\n");
 
-	fat_fs->fat_length = fat_fs->bs.total_sectors-1;
-	fat_fs->data_start =  fat_fs->bs.fat_start + (sizeof (cluster_t) * fat_fs->fat_length)/DISK_SECTOR_SIZE +1;
+	fat_fs->fat_length = fat_fs->bs.total_sectors-5;
+	fat_fs->data_start =  fat_fs->bs.fat_start + (sizeof (cluster_t) * fat_fs->fat_length)/DISK_SECTOR_SIZE;
 	fat_fs->last_clst = 1;
 	lock_init(&fat_fs->write_lock);
 }
@@ -230,6 +233,7 @@ cluster_to_sector (cluster_t clst) {
 
 cluster_t
 sector_to_cluster (disk_sector_t sector) {
+	if (sector < fat_fs->data_start) {return sector;}
 	cluster_t ret =  (cluster_t)(sector - fat_fs->data_start);
 	//printf("sector to cluster: %d -> %d\n",sector, ret);
 	return ret;
